@@ -69,14 +69,88 @@ def test_state_updates_between_nodes():
     graph = agent.build_graph()
     state = agent.create_initial_state("Solve 2x + 5 = 15", "beginner")
     result = graph.invoke(state)
-    assert result["current_node"] == "finalize_answer"
+    assert result["current_node"] == "select_visualization"
     assert result["debug_trace"]
-    assert result["selected_branch"] in {"FINAL", "SOLVE", "CLARIFY"}
+    assert result["selected_branch"] in {"FINAL", "SOLVE", "CLARIFY", "VISUALIZATION"}
 
 
 def test_multi_step_mathematical_solution():
     result = agent.run_agent("Solve 2x + 5 = 15", user_level="beginner")
     assert len(result["solution_steps"]) >= 2
+
+
+def test_solved_equation_selects_step_visualization():
+    result = agent.run_agent("Solve 2x + 5 = 15", user_level="beginner")
+    assert result["visualization_type"] == "step_by_step"
+    assert result["visualization_spec"]["type"] == "step_by_step"
+    assert result["visualization_spec"]["config"]["steps"] == result["solution_steps"]
+
+
+def test_simple_arithmetic_does_not_select_a_chart():
+    result = agent.run_agent("What is 2 + 2?", user_level="beginner")
+    assert result["visualization_type"] == "none"
+    assert "4" in result["final_answer"]
+
+
+def test_bare_arithmetic_expression_is_evaluated():
+    result = agent.run_agent("2 + 2", user_level="beginner")
+    assert result["intent"] == "SOLVE"
+    assert result["calculation_result"] == "4"
+    assert result["verification_status"] == "verified"
+
+
+def test_worded_arithmetic_is_evaluated():
+    result = agent.run_agent("What is 3 times 4?", user_level="beginner")
+    assert result["intent"] == "SOLVE"
+    assert result["calculation_result"] == "12"
+    assert result["verification_status"] == "verified"
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [("What is 10 minus 3?", "7"), ("What is 12 divided by 4?", "3")],
+)
+def test_worded_subtraction_and_division_are_evaluated(question, expected):
+    result = agent.run_agent(question, user_level="beginner")
+    assert result["intent"] == "SOLVE"
+    assert result["calculation_result"] == expected
+    assert result["verification_status"] == "verified"
+
+
+def test_expression_with_blank_right_side_combines_like_terms():
+    result = agent.run_agent("this is 43x -30x =", user_level="beginner")
+    assert result["intent"] == "SOLVE"
+    assert "13x" in result["final_answer"]
+    assert result["verification_status"] == "verified"
+
+
+def test_definite_log_integral_is_solved_with_zeta_value():
+    question = r"""Evaluate the following definite integral:
+\[
+I=\int_0^1\frac{\ln(x)\ln(1-x)}{x}\,dx
+\]
+Please solve step by step and verify numerically."""
+    result = agent.run_agent(question, user_level="beginner")
+    assert result["intent"] == "SOLVE"
+    assert "zeta(3)" in result["final_answer"].lower() or "ζ(3)" in result["final_answer"]
+    assert "1.202056903" in result["final_answer"]
+    assert result["verification_status"] == "verified"
+
+
+def test_resolve_unicode_squared_equation_is_solved_and_verified():
+    result = agent.run_agent("resolve integral 5x² = 222", user_level="beginner")
+    assert result["intent"] == "SOLVE"
+    assert "sqrt(1110)" in result["exact_calculation_result"]
+    assert "6.6633" in result["calculation_result"]
+    assert result["verification_status"] == "verified"
+
+
+def test_irrational_roots_are_displayed_as_decimals_but_verified_exactly():
+    result = agent.run_agent("Solve 5x² = 676", user_level="beginner")
+    assert "sqrt" not in result["final_answer"].lower()
+    assert "11.627" in result["final_answer"]
+    assert "sqrt" in result["exact_calculation_result"]
+    assert result["verification_status"] == "verified"
 
 
 def test_successful_sympy_verification():
@@ -129,6 +203,37 @@ def test_multiplication_question_explains_multiplication():
     result = agent.run_agent("what is multiply?", user_level="beginner")
     assert result["intent"] == "CONCEPT"
     assert "multiply" in result["final_answer"].lower() or "multiplication" in result["final_answer"].lower()
+    assert "rate of change" not in result["final_answer"].lower()
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("What is division?", "equal groups"),
+        ("What is a fraction?", "part of a whole"),
+        ("What is a prime number?", "exactly two"),
+        ("What is probability?", "chance"),
+        ("What is a square root?", "multiplied by itself"),
+        ("What does 25 percent mean?", "out of 100"),
+        ("What is the average?", "sum of the numbers"),
+        ("What is slope?", "change in y"),
+        ("What is algebra?", "unknown"),
+        ("What is a function?", "one output"),
+    ],
+)
+def test_common_math_concepts_have_useful_offline_answers(monkeypatch, question, expected):
+    monkeypatch.setattr(agent, "get_llm", lambda: None)
+    result = agent.run_agent(question, user_level="beginner")
+    assert result["intent"] == "CONCEPT"
+    assert expected in result["final_answer"].lower()
+
+
+def test_derivative_of_expression_is_not_treated_as_equation(monkeypatch):
+    monkeypatch.setattr(agent, "get_llm", lambda: None)
+    result = agent.run_agent("Find the derivative of x^2", user_level="beginner")
+    assert result["intent"] == "CONCEPT"
+    assert "2*x" in result["final_answer"] or "2x" in result["final_answer"]
+    assert result["visualization_type"] == "derivative_plot"
 
 
 def test_missing_api_key_and_llm_error_handling(monkeypatch):

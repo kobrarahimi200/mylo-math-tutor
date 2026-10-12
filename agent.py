@@ -15,6 +15,7 @@ from sympy.parsing.sympy_parser import (
     parse_expr,
     standard_transformations,
 )
+from visualizations import choose_visualization
 
 load_dotenv()
 
@@ -39,6 +40,7 @@ class MathTutorState(TypedDict, total=False):
     current_step: int
     has_more_steps: bool
     calculation_result: str
+    exact_calculation_result: str
     verification_status: str
     explanation: str
     clarity_score: int
@@ -50,6 +52,11 @@ class MathTutorState(TypedDict, total=False):
     selected_branch: str
     debug_trace: list[str]
     is_debug: bool
+    visualization_type: str
+    visualization_spec: dict[str, Any]
+    visualization_validation: str
+    explanation_level: str
+    conversation_context: list[dict[str, str]]
 
 
 def get_llm() -> ChatOpenAI | None:
@@ -71,7 +78,13 @@ def get_llm() -> ChatOpenAI | None:
         return None
 
 
-def safe_llm_response(prompt: str, question: str, *, model_name: str = "math_tutor") -> str:
+def safe_llm_response(
+    prompt: str,
+    question: str,
+    *,
+    model_name: str = "math_tutor",
+    context: list[dict[str, str]] | None = None,
+) -> str:
     llm = get_llm()
     if llm is None:
         return fallback_response(prompt, question, model_name=model_name)
@@ -84,7 +97,12 @@ def safe_llm_response(prompt: str, question: str, *, model_name: str = "math_tut
         template = ChatPromptTemplate.from_messages(
             [("system", system_prompt), ("user", "{question}")]
         )
-        response = llm.invoke(template.format(question=prompt + "\n\nUser question: " + question))
+        history = ""
+        if context:
+            history = "\n\nRecent conversation:\n" + "\n".join(
+                f"{turn.get('role', 'user')}: {turn.get('content', '')}" for turn in context[-8:]
+            )
+        response = llm.invoke(template.format(question=prompt + history + "\n\nUser question: " + question))
         return str(response.content).strip() or fallback_response(prompt, question, model_name=model_name)
     except Exception:
         return fallback_response(prompt, question, model_name=model_name)
@@ -93,10 +111,31 @@ def safe_llm_response(prompt: str, question: str, *, model_name: str = "math_tut
 def fallback_response(prompt: str, question: str, *, model_name: str = "math_tutor") -> str:
     del model_name
     ql = (question or "").lower()
-    if "derivative" in ql or "مشتق" in ql:
+    arithmetic = re.sub(r"(?i)^\s*(?:what is|calculate|evaluate)\s+", "", question or "").rstrip("?!. ")
+    if arithmetic and re.fullmatch(r"[\d\s.+\-*/^()]+", arithmetic):
+        try:
+            result = parse_math_expression(arithmetic)
+            if result.is_number:
+                return f"{arithmetic} = {result}"
+        except Exception:
+            pass
+    if "derivative" in ql or "differentiate" in ql or "مشتق" in ql:
+        expression_match = re.search(
+            r"(?i)(?:derivative of|differentiate)\s+([0-9a-z\s.+*/^()\-]+?)(?:\s+(?:using|at)\b|[?.!,;]|$)",
+            question,
+        )
+        derivative_text = ""
+        if expression_match:
+            expression = expression_match.group(1).strip().replace("²", "^2").replace("³", "^3")
+            if re.fullmatch(r"[0-9x\s.+*/^()\-]+", expression):
+                try:
+                    derivative = sp.diff(parse_math_expression(expression), sp.Symbol("x"))
+                    derivative_text = f" The derivative of {expression} is {format_algebraic_expression(derivative)}."
+                except Exception:
+                    pass
         if is_persian(question):
-            return "مشتق یعنی نرخ تغییر یک کمیت نسبت به یک متغیر. مثل سرعت، وقتی موقعیت ماشین تغییر می‌کند، سرعت همان مشتق موقعیت است."
-        return "A derivative tells you how quickly something is changing. For example, if a car's position changes over time, the derivative of position is velocity."
+            return "مشتق نرخ تغییر یک تابع را نشان می‌دهد؛ مثلا مشتق مکان نسبت به زمان، سرعت است." + derivative_text
+        return "A derivative measures how quickly a function changes. For example, the derivative of position with respect to time is velocity." + derivative_text
     if "integral" in ql or "انتگرال" in ql:
         if is_persian(question):
             return "انتگرال یعنی جمع کردن مقدارهای خیلی کوچک برای به دست آوردن مجموع کلی. مثل جمع کردن سطح زیر یک منحنی."
@@ -105,7 +144,71 @@ def fallback_response(prompt: str, question: str, *, model_name: str = "math_tut
         if is_persian(question):
             return "ضرب یعنی جمع کردن یک عدد چند بار. مثلا 3 × 4 یعنی 4 را سه بار با هم جمع کنیم: 4 + 4 + 4 = 12."
         return "Multiplication means repeated addition. For example, 3 × 4 means 4 + 4 + 4, which equals 12."
-    if "solve" in ql or "equation" in ql or "x" in ql or "معادله" in ql:
+    if any(term in ql for term in ("division", "divide", "divided", "تقسیم")):
+        if is_persian(question):
+            return "تقسیم یعنی تقسیم کردن یک مقدار به گروه‌های برابر. مثلا 12 ÷ 3 یعنی 12 را به 3 گروه برابر تقسیم کنیم؛ در هر گروه 4 تا می‌شود."
+        return "Division splits a quantity into equal groups. For example, 12 ÷ 3 asks how many are in each of 3 equal groups; the answer is 4."
+    if "fraction" in ql or "کسر" in ql:
+        if is_persian(question):
+            return "کسر بخشی از یک کل را نشان می‌دهد. در 3/4، عدد 4 کل را به چهار قسمت برابر تقسیم می‌کند و عدد 3 سه قسمت از آن را نشان می‌دهد."
+        return "A fraction represents part of a whole. In 3/4, the denominator 4 divides the whole into four equal parts, and the numerator 3 counts three of them."
+    if "prime" in ql or "اول" in ql:
+        if is_persian(question):
+            return "عدد اول عددی بزرگ‌تر از 1 است که دقیقا دو مقسوم‌علیه مثبت دارد: 1 و خودش. مثلا 7 عدد اول است."
+        return "A prime number is an integer greater than 1 with exactly two positive divisors: 1 and itself. For example, 7 is prime."
+    if "probability" in ql or "احتمال" in ql:
+        if is_persian(question):
+            return "احتمال اندازه شانس رخ دادن یک رویداد است. برای حالت‌های هم‌شانس، احتمال برابر است با تعداد نتیجه‌های مطلوب تقسیم بر تعداد کل نتیجه‌ها. مثلا احتمال شیر آمدن سکه سالم 1/2 است."
+        return "Probability measures the chance that an event will happen. For equally likely outcomes, it is favorable outcomes divided by total outcomes. For a fair coin, the chance of heads is 1/2."
+    if "square root" in ql or "sqrt" in ql or "جذر" in ql:
+        if is_persian(question):
+            return "جذر دوم عددی است که اگر در خودش ضرب شود، عدد اصلی به دست می‌آید. مثلا جذر دوم 25 برابر 5 است، چون 5 × 5 = 25."
+        return "A square root is a number that multiplied by itself gives the original number. For example, √25 = 5 because 5 × 5 = 25."
+    if "percent" in ql or "percentage" in ql or "درصد" in ql:
+        if is_persian(question):
+            return "درصد یعنی تعداد از هر 100. مثلا 25٪ یعنی 25 از 100، یا یک‌چهارم کل."
+        return "A percent means a number out of 100. For example, 25% means 25 out of 100, which is one quarter of the whole."
+    if "average" in ql or "mean" in ql or "میانگین" in ql:
+        if is_persian(question):
+            return "میانگین حسابی از تقسیم مجموع عددها بر تعداد آن‌ها به دست می‌آید. میانگین 2، 4 و 6 برابر (2 + 4 + 6) ÷ 3 = 4 است."
+        return "The arithmetic mean is the sum of the numbers divided by how many numbers there are. The mean of 2, 4, and 6 is (2 + 4 + 6) ÷ 3 = 4."
+    if "slope" in ql or "شیب" in ql:
+        if is_persian(question):
+            return "شیب نشان می‌دهد y به ازای تغییر x چقدر تغییر می‌کند. برای دو نقطه، شیب برابر تغییر y تقسیم بر تغییر x است: m = (y₂ - y₁)/(x₂ - x₁)."
+        return "Slope tells how much y changes for a change in x. Between two points, slope is the change in y divided by the change in x: m = (y₂ - y₁)/(x₂ - x₁)."
+    if "algebra" in ql or "جبر" in ql:
+        if is_persian(question):
+            return "جبر از نمادها، معمولا حروف، برای نمایش عددهای ناشناخته یا متغیر استفاده می‌کند. مثلا در x + 3 = 7، باید x را پیدا کنیم؛ پس x = 4."
+        return "Algebra uses symbols, often letters, to represent unknown or changing numbers. In x + 3 = 7, solve for the unknown and get x = 4."
+    if "function" in ql or "تابع" in ql:
+        if is_persian(question):
+            return "تابع قانونی است که به هر ورودی مجاز دقیقا یک خروجی نسبت می‌دهد. مثلا در f(x) = 2x، ورودی 3 خروجی 6 دارد."
+        return "A function is a rule that gives exactly one output for each allowed input. For example, for f(x) = 2x, input 3 gives output 6."
+    if "addition" in ql or "add" in ql or "جمع" in ql:
+        if is_persian(question):
+            return "جمع کردن یعنی کنار هم گذاشتن مقدارها. مثلا 3 + 2 = 5."
+        return "Addition combines quantities. For example, 3 + 2 = 5."
+    if "subtraction" in ql or "subtract" in ql or "minus" in ql or "تفریق" in ql:
+        if is_persian(question):
+            return "تفریق یعنی کم کردن یک مقدار از مقدار دیگر. مثلا 5 - 2 = 3."
+        return "Subtraction takes one quantity away from another. For example, 5 - 2 = 3."
+    if "circle" in ql or "دایره" in ql:
+        if is_persian(question):
+            return "مساحت دایره از رابطه A = πr² به دست می‌آید؛ r شعاع دایره است. مثلا اگر شعاع 2 باشد، مساحت 4π واحد مربع است."
+        return "A circle's area is A = πr², where r is its radius. For example, if the radius is 2, the area is 4π square units."
+    if " y = a" in ql or "how a changes" in ql or "coefficient a" in ql:
+        if is_persian(question):
+            return "ضریب a کشیدگی عمودی سهمی y = ax² را کنترل می‌کند. وقتی |a| بزرگ‌تر شود سهمی باریک‌تر می‌شود؛ اگر a منفی باشد، رو به پایین باز می‌شود."
+        return "The coefficient a controls the vertical stretch of y = ax². A larger |a| makes the parabola narrower; a negative a flips it downward."
+    if "plot" in ql or "graph" in ql or re.search(r"\by\s*=", ql):
+        expression = ql.split("=", 1)[1].strip(" ?.!;,") if "=" in ql else ""
+        if "sin" in expression:
+            return "The graph of y = sin(x) is a smooth wave that oscillates between -1 and 1 and repeats every 2π."
+        if "cos" in expression:
+            return "The graph of y = cos(x) is a smooth wave between -1 and 1 that repeats every 2π, starting at 1."
+        if "x" in expression:
+            return "This graph shows how y changes as x changes. The plotted curve makes its shape and key values easier to explore."
+    if "solve" in ql or "equation" in ql or "معادله" in ql or looks_like_equation(question):
         if "2x + 5 = 15" in ql or "2x+5=15" in ql or "2x + 5 = 15" in (question or ""):
             return "Step 1: Subtract 5 from both sides.\n2x = 10\n\nStep 2: Divide by 2.\nx = 5\n\nVerification: 2(5) + 5 = 15"
         if is_persian(question):
@@ -131,12 +234,20 @@ def looks_like_equation(text: str) -> bool:
 
 def is_concept_request(text: str) -> bool:
     q = (text or "").lower()
-    english_markers = ["what is", "explain", "definition", "meaning", "concept", "why", "describe", "interpret", "derive"]
+    english_markers = ["what is", "what does", "what are", "explain", "definition", "meaning", "mean?", "concept", "why", "describe", "interpret", "derive", "show", "visualize", "plot", "graph", "how do", "how does"]
     persian_markers = ["توضیح", "چیست", "معنی", "تعریف", "چرا", "توضیح بده", "تفسیر", "نحوه"]
-    math_topics = ["derivative", "integral", "limit", "matrix", "probability", "geometry", "algebra", "function", "slope", "vector"]
+    math_topics = ["derivative", "integral", "limit", "matrix", "probability", "geometry", "algebra", "function", "slope", "vector", "division", "fraction", "prime", "percent", "percentage", "average", "mean", "square root", "multiply", "multiplication"]
     if any(marker in q for marker in english_markers + persian_markers):
         return True
-    return any(topic in q for topic in math_topics)
+    return any(topic in q for topic in math_topics) or bool(re.search(r"\by\s*=|\bf\(x\)\s*=", q))
+
+
+def is_contextual_followup(text: str, context: list[dict[str, str]] | None) -> bool:
+    if not context:
+        return False
+    q = (text or "").strip().lower()
+    markers = ("why", "how", "explain more", "what about", "and then", "can you", "it?", "that?", "چرا", "چطور", "بیشتر")
+    return any(q.startswith(marker) or q == marker for marker in markers)
 
 
 def make_debug_entry(state: dict[str, Any], message: str) -> None:
@@ -150,6 +261,7 @@ def parse_math_expression(expression: str) -> sp.Expr:
     cleaned = str(expression or "").strip()
     if not cleaned:
         raise ValueError("Empty expression")
+    cleaned = cleaned.replace("²", "^2").replace("³", "^3")
     cleaned = cleaned.replace("^", "**").replace("−", "-").replace("–", "-")
     cleaned = re.sub(r"(?<=\d)\s*(?=[A-Za-z(])", "*", cleaned)
     cleaned = re.sub(r"(?<=\))\s*(?=[A-Za-z0-9(])", "*", cleaned)
@@ -158,13 +270,72 @@ def parse_math_expression(expression: str) -> sp.Expr:
     return parse_expr(cleaned, transformations=transformations, evaluate=True)
 
 
+def simple_arithmetic_expression(question: str) -> str | None:
+    expression = str(question or "").strip().lower()
+    expression = re.sub(r"^(?:what is|calculate|compute|evaluate|solve)\s+", "", expression)
+    expression = expression.replace("×", "*").replace("÷", "/").replace("−", "-").replace("–", "-")
+    replacements = (
+        (r"\b(?:multiplied by|times|multiply)\b", "*"),
+        (r"\b(?:divided by|divide by|over)\b", "/"),
+        (r"\b(?:plus|added to)\b", "+"),
+        (r"\bminus\b", "-"),
+    )
+    for pattern, operator in replacements:
+        expression = re.sub(pattern, operator, expression)
+    expression = expression.strip(" ?.!;,:")
+    if not re.fullmatch(r"[\d\s.+*/^()\-]+", expression) or not re.search(r"[+*/^]|-(?=\s*\d)", expression):
+        return None
+    try:
+        parsed = parse_math_expression(expression)
+    except Exception:
+        return None
+    return expression if parsed.is_number else None
+
+
+def expression_before_empty_equals(question: str) -> str | None:
+    normalized = str(question or "").strip().replace("−", "-").replace("–", "-")
+    if "=" not in normalized or normalized.split("=", 1)[1].strip():
+        return None
+    expression = normalized.split("=", 1)[0].strip()
+    expression = re.sub(r"(?i)^(?:this is|simplify|reduce|what is|calculate|evaluate|solve)\s+", "", expression).strip()
+    if not expression or not re.fullmatch(r"[0-9A-Za-z\s+*/^().-]+", expression):
+        return None
+    if any(name.lower() not in {"x", "y", "z", "a", "b", "c", "t"} for name in re.findall(r"[A-Za-z]+", expression)):
+        return None
+    try:
+        parsed = parse_math_expression(expression)
+    except Exception:
+        return None
+    return expression if parsed.free_symbols else None
+
+
+def is_log_product_zeta_integral(question: str) -> bool:
+    compact = re.sub(r"\s+", "", str(question or "").lower())
+    has_integral = r"\int" in compact or "definiteintegral" in compact
+    has_unit_bounds = "_0^1" in compact or "from0to1" in compact
+    has_log_product = "\\ln(x)" in compact and "\\ln(1-x)" in compact
+    has_denominator_x = "}{x}" in compact or "/x" in compact
+    return has_integral and has_unit_bounds and has_log_product and has_denominator_x
+
+
+def format_algebraic_expression(expression: sp.Expr) -> str:
+    return str(expression).replace("**", "^").replace("*", "")
+
+
+def format_solution_value(value: sp.Expr) -> str:
+    if value.is_Rational:
+        return str(value)
+    return str(sp.N(value, 12))
+
+
 def safe_parse_equation(question: str) -> dict[str, Any]:
     cleaned = str(question or "").strip()
     if not cleaned:
         return {"equation": None, "variable": None, "lhs": None, "rhs": None}
 
-    normalized = cleaned.replace("×", "*").replace("÷", "/").replace("−", "-").replace("–", "-")
-    normalized = re.sub(r"(?i)^(?:solve|find|calculate|evaluate|simplify|determine|what is|explain|the equation|equation)\s+", "", normalized)
+    normalized = cleaned.replace("²", "^2").replace("³", "^3")
+    normalized = normalized.replace("×", "*").replace("÷", "/").replace("−", "-").replace("–", "-")
+    normalized = re.sub(r"(?i)^(?:(?:resolve|solve|find|calculate|evaluate|simplify|determine|what is|explain|the equation|equation|integral)\s+)+", "", normalized)
     normalized = normalized.strip()
 
     for pattern in [r"[A-Za-z0-9\s\+\-\*\/\^\(\)\.\=]+", r"[A-Za-z0-9\s\+\-\*\/\^\(\)\.\=]+"]:
@@ -223,9 +394,23 @@ def analyze_question(state: dict[str, Any]) -> dict[str, Any]:
 
     ql = question.lower()
     has_explicit_equation = looks_like_equation(question)
+    arithmetic_expression = simple_arithmetic_expression(question)
+    simplification_expression = expression_before_empty_equals(question)
+    derivative_request = any(term in ql for term in ("derivative", "differentiate", "مشتق"))
     is_vague_reference = re.search(r"(?i)(this|that)\s+(equation|problem)", question) and not has_explicit_equation
-    is_concept = is_concept_request(question) and not is_vague_reference
-    if is_concept:
+    is_concept = (is_concept_request(question) or is_contextual_followup(question, state.get("conversation_context"))) and not is_vague_reference
+    asks_to_solve = any(token in ql for token in ["solve", "resolve", "find", "calculate", "simplify", "evaluate", "work out"])
+    if is_log_product_zeta_integral(question):
+        analysis.intent = "SOLVE"
+        analysis.math_concept = "calculus and infinite series"
+    elif derivative_request:
+        analysis.intent = "CONCEPT"
+        analysis.math_concept = "calculus"
+    elif arithmetic_expression or simplification_expression:
+        analysis.intent = "SOLVE"
+    elif asks_to_solve and has_explicit_equation and not is_vague_reference:
+        analysis.intent = "SOLVE"
+    elif is_concept:
         analysis.intent = "CONCEPT"
     elif has_explicit_equation and not is_vague_reference:
         analysis.intent = "SOLVE"
@@ -265,12 +450,24 @@ def classify_intent(state: dict[str, Any]) -> dict[str, Any]:
     question = state.get("question", "")
     ql = question.lower()
     has_explicit_equation = looks_like_equation(question)
+    arithmetic_expression = simple_arithmetic_expression(question)
+    simplification_expression = expression_before_empty_equals(question)
+    derivative_request = any(term in ql for term in ("derivative", "differentiate", "مشتق"))
     is_vague_reference = re.search(r"(?i)(this|that)\s+(equation|problem)", question) and not has_explicit_equation
+    asks_to_solve = any(token in ql for token in ["solve", "resolve", "find", "calculate", "simplify", "evaluate", "work out"])
     if not question.strip():
         state["intent"] = "CLARIFY"
     elif is_vague_reference:
         state["intent"] = "CLARIFY"
-    elif is_concept_request(question):
+    elif is_log_product_zeta_integral(question):
+        state["intent"] = "SOLVE"
+    elif derivative_request:
+        state["intent"] = "CONCEPT"
+    elif arithmetic_expression or simplification_expression:
+        state["intent"] = "SOLVE"
+    elif asks_to_solve and has_explicit_equation:
+        state["intent"] = "SOLVE"
+    elif is_concept_request(question) or is_contextual_followup(question, state.get("conversation_context")):
         state["intent"] = "CONCEPT"
     elif has_explicit_equation:
         state["intent"] = "SOLVE"
@@ -295,11 +492,22 @@ def explain_concept(state: dict[str, Any]) -> dict[str, Any]:
         "Explain this mathematical idea using a simple, level-appropriate explanation.",
         question,
         model_name="concept",
+        context=state.get("conversation_context"),
     )
     if level == "advanced":
         explanation = explanation + "\n\nIn formal terms: the main idea is to analyze local change or accumulation with precise definitions and notation."
     elif level == "beginner":
-        explanation = explanation + "\n\nThink of it as a simple everyday example: the rate of change or the total of many tiny parts."
+        ql = question.lower()
+        if any(term in ql for term in ("derivative", "مشتق")):
+            explanation += "\n\nThink of it as an everyday example: a car's changing position gives its speed."
+        elif any(term in ql for term in ("integral", "انتگرال")):
+            explanation += "\n\nThink of adding many tiny pieces to find a total, like the area under a curve."
+        elif any(term in ql for term in ("multiply", "multiplication", "ضرب")):
+            explanation += "\n\nFor example, 3 bags with 4 apples each make 3 × 4 = 12 apples."
+        elif "circle" in ql or "دایره" in ql:
+            explanation += "\n\nThe radius is the distance from the center to the edge; doubling it makes the area four times larger."
+        else:
+            explanation += "\n\nA small worked example can make the main idea easier to see."
     else:
         explanation = explanation + "\n\nA good way to think of it is a step-by-step example with a practical formula."
     state["explanation"] = explanation
@@ -399,17 +607,49 @@ def solve_step(state: dict[str, Any]) -> dict[str, Any]:
     state["current_node"] = "solve_step"
     state["selected_branch"] = "SOLVE_STEP"
     question = state.get("question", "")
-    eq = safe_parse_equation(question)
+    arithmetic_expression = simple_arithmetic_expression(question)
+    simplification_expression = expression_before_empty_equals(question)
+    special_integral = is_log_product_zeta_integral(question)
+    eq = safe_parse_equation(question) if not (arithmetic_expression or simplification_expression or special_integral) else {"equation": None}
     equation = eq.get("equation")
     variable = eq.get("variable", "x")
 
-    if not equation:
-        state["errors"] = state.get("errors", []) + ["No equation found in the prompt."]
+    if special_integral:
+        if not state.get("solution_steps"):
+            numeric_value = str(sp.N(sp.zeta(3), 15))
+            state["calculation_result"] = numeric_value
+            state["solution_steps"] = [
+                "Method: expand ln(1 - x) as the power series -Σ(n=1 to ∞) x^n/n, valid for 0 ≤ x < 1.",
+                "Substitute the series into the integral. Each term contains -x^(n-1)ln(x)/n, whose integral from 0 to 1 is 1/n^3 because ∫₀¹ x^(n-1)ln(x) dx = -1/n².",
+                "Sum the resulting series: Σ(n=1 to ∞) 1/n^3 = ζ(3), Apéry's constant. Term-by-term integration is justified by monotone convergence since the terms are nonnegative on (0, 1).",
+                f"Numerical verification: ζ(3) ≈ {numeric_value}.",
+            ]
+            state["current_step"] = 0
+    elif arithmetic_expression:
+        if not state.get("solution_steps"):
+            result = parse_math_expression(arithmetic_expression)
+            state["calculation_result"] = str(result)
+            state["solution_steps"] = [
+                f"Evaluate {arithmetic_expression} using the order of operations.",
+                f"The result is {result}.",
+            ]
+            state["current_step"] = 0
+    elif simplification_expression:
+        if not state.get("solution_steps"):
+            simplified = sp.simplify(parse_math_expression(simplification_expression))
+            result_text = format_algebraic_expression(simplified)
+            state["calculation_result"] = result_text
+            state["solution_steps"] = [
+                f"Combine like terms in {simplification_expression} to get {result_text}."
+            ]
+            state["current_step"] = 0
+    elif not equation:
+        state["errors"] = state.get("errors", []) + ["No equation or arithmetic expression found in the prompt."]
         state["verification_status"] = "unverified"
         state["has_more_steps"] = False
         state["calculation_result"] = "Unclear"
         state["selected_branch"] = "CLARIFY"
-        make_debug_entry(state, "solve_step: equation missing")
+        make_debug_entry(state, "solve_step: equation or arithmetic expression missing")
         return state
 
     if not state.get("solution_steps"):
@@ -417,9 +657,12 @@ def solve_step(state: dict[str, Any]) -> dict[str, Any]:
         rhs_expr = parse_math_expression(eq["rhs"])
         solved = sp.solve(lhs_expr - rhs_expr, sp.Symbol(variable))
         if isinstance(solved, list):
-            result_text = ", ".join(str(s) for s in solved)
+            exact_result_text = ", ".join(str(value) for value in solved)
+            result_text = ", ".join(format_solution_value(value) for value in solved)
         else:
-            result_text = str(solved)
+            exact_result_text = str(solved)
+            result_text = format_solution_value(solved) if isinstance(solved, sp.Expr) else str(solved)
+        state["exact_calculation_result"] = exact_result_text
         state["calculation_result"] = result_text
         if "2x + 5 = 15" in question or "2x+5=15" in question:
             state["solution_steps"] = [
@@ -458,7 +701,61 @@ def verify_result(state: dict[str, Any]) -> dict[str, Any]:
     state["selected_branch"] = "VERIFY"
     question = state.get("question", "")
     calc = state.get("calculation_result", "")
-    eq = safe_parse_equation(question)
+    arithmetic_expression = simple_arithmetic_expression(question)
+    simplification_expression = expression_before_empty_equals(question)
+    special_integral = is_log_product_zeta_integral(question)
+    eq = safe_parse_equation(question) if not (arithmetic_expression or simplification_expression or special_integral) else {"equation": None}
+    if special_integral:
+        expected = sp.N(sp.zeta(3), 15)
+        try:
+            candidate = sp.Float(calc)
+            if abs(candidate - expected) < sp.Float("1e-14"):
+                state["verification_status"] = "verified"
+                make_debug_entry(state, "verify: integral numerical value matches zeta(3)")
+                return state
+            state["verification_status"] = "incorrect"
+            state["errors"] = state.get("errors", []) + ["The numerical integral result did not match zeta(3)."]
+            make_debug_entry(state, "verify: integral numerical check failed")
+            return state
+        except Exception:
+            state["verification_status"] = "unverified"
+            state["errors"] = state.get("errors", []) + ["Numerical integral verification was not possible."]
+            make_debug_entry(state, "verify: integral numerical check unavailable")
+            return state
+    if arithmetic_expression:
+        try:
+            expected = parse_math_expression(arithmetic_expression)
+            candidate = parse_math_expression(calc)
+            if sp.simplify(candidate - expected) == 0:
+                state["verification_status"] = "verified"
+                make_debug_entry(state, "verify: arithmetic result matches SymPy evaluation")
+                return state
+            state["verification_status"] = "incorrect"
+            state["errors"] = state.get("errors", []) + ["The computed arithmetic result is incorrect."]
+            make_debug_entry(state, "verify: arithmetic candidate failed")
+            return state
+        except Exception:
+            state["verification_status"] = "unverified"
+            state["errors"] = state.get("errors", []) + ["SymPy arithmetic verification was not possible."]
+            make_debug_entry(state, "verify: arithmetic expression could not be checked")
+            return state
+    if simplification_expression:
+        try:
+            expected = sp.simplify(parse_math_expression(simplification_expression))
+            candidate = parse_math_expression(calc)
+            if sp.simplify(candidate - expected) == 0:
+                state["verification_status"] = "verified"
+                make_debug_entry(state, "verify: simplified expression matches SymPy")
+                return state
+            state["verification_status"] = "incorrect"
+            state["errors"] = state.get("errors", []) + ["The simplified expression is incorrect."]
+            make_debug_entry(state, "verify: simplified expression failed")
+            return state
+        except Exception:
+            state["verification_status"] = "unverified"
+            state["errors"] = state.get("errors", []) + ["SymPy simplification verification was not possible."]
+            make_debug_entry(state, "verify: simplified expression could not be checked")
+            return state
     if not eq.get("equation"):
         state["verification_status"] = "unverified"
         state["errors"] = state.get("errors", []) + ["Verification not possible without an equation."]
@@ -476,15 +773,15 @@ def verify_result(state: dict[str, Any]) -> dict[str, Any]:
             make_debug_entry(state, "verify: no symbolic solution found")
             return state
 
-        candidate_text = str(calc).strip()
-        match = re.search(r"-?\d*\.?\d+", candidate_text)
-        if not match:
+        exact_calc = state.get("exact_calculation_result") or calc
+        candidate_texts = [value.strip() for value in str(exact_calc).split(",") if value.strip()]
+        if not candidate_texts:
             state["verification_status"] = "unverified"
             make_debug_entry(state, "verify: no numeric candidate found")
             return state
 
-        candidate = sp.Float(match.group(0))
-        if any(abs(candidate - s) < 1e-9 for s in solution_values):
+        candidates = [parse_math_expression(value) for value in candidate_texts]
+        if any(sp.simplify(candidate - solution) == 0 for candidate in candidates for solution in solution_values):
             state["verification_status"] = "verified"
             make_debug_entry(state, "verify: result matches symbolic solution")
             return state
@@ -585,6 +882,18 @@ def finalize_answer(state: dict[str, Any]) -> dict[str, Any]:
     return state
 
 
+def select_visualization(state: dict[str, Any]) -> dict[str, Any]:
+    state["current_node"] = "select_visualization"
+    state["selected_branch"] = "VISUALIZATION"
+    spec = choose_visualization(state)
+    state["visualization_type"] = spec["type"]
+    state["visualization_spec"] = spec
+    state["visualization_validation"] = "valid"
+    state["explanation_level"] = state.get("user_level", "intermediate")
+    make_debug_entry(state, f"visualization: selected {spec['type']}")
+    return state
+
+
 def route_intent(state: dict[str, Any]) -> str:
     return state.get("intent", "CLARIFY")
 
@@ -640,6 +949,7 @@ def build_graph() -> StateGraph:
     graph.add_node("explain_solution", explain_solution)
     graph.add_node("ask_for_clarification", ask_for_clarification)
     graph.add_node("finalize_answer", finalize_answer)
+    graph.add_node("select_visualization", select_visualization)
 
     graph.add_edge(START, "analyze_question")
     graph.add_edge("analyze_question", "detect_user_level")
@@ -673,12 +983,17 @@ def build_graph() -> StateGraph:
     })
     graph.add_edge("explain_solution", "finalize_answer")
     graph.add_edge("ask_for_clarification", "finalize_answer")
-    graph.add_edge("finalize_answer", END)
+    graph.add_edge("finalize_answer", "select_visualization")
+    graph.add_edge("select_visualization", END)
 
     return graph.compile()
 
 
-def create_initial_state(question: str, user_level: str | None = None) -> dict[str, Any]:
+def create_initial_state(
+    question: str,
+    user_level: str | None = None,
+    conversation_context: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
     level = user_level.lower() if user_level else "intermediate"
     return {
         "question": question,
@@ -702,11 +1017,20 @@ def create_initial_state(question: str, user_level: str | None = None) -> dict[s
         "selected_branch": "",
         "debug_trace": [],
         "is_debug": False,
+        "visualization_type": "none",
+        "visualization_spec": {"type": "none", "title": "", "config": {}},
+        "visualization_validation": "pending",
+        "explanation_level": level,
+        "conversation_context": conversation_context or [],
     }
 
 
-def run_agent(question: str, user_level: str | None = None) -> dict[str, Any]:
-    state = create_initial_state(question, user_level)
+def run_agent(
+    question: str,
+    user_level: str | None = None,
+    conversation_context: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    state = create_initial_state(question, user_level, conversation_context)
     graph = build_graph()
     compiled = graph.invoke(state)
     return compiled

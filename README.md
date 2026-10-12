@@ -1,135 +1,128 @@
-# Mylo Complex Mathematics Tutor
+# Mylo Mathematics Tutor
 
-A terminal-based mathematics tutor built with LangGraph, LangChain, SymPy, and Python. The project models a real graph-based tutoring workflow where the agent analyzes the question, detects the user level, classifies the intent, and follows either a conceptual, solving, or clarification route.
+Mylo is a mathematics tutor with a Python LangGraph core, a FastAPI adapter, and a responsive React/TypeScript learning workspace. The web experience calls the existing graph; the CLI remains available and uses the same graph.
 
-## Overview
+## Architecture
 
-The tutor can:
+```mermaid
+flowchart LR
+    Browser[React chat workspace] -->|POST /api/chat| API[FastAPI adapter]
+    API --> Agent[Existing LangGraph tutor]
+    Agent --> Analyze[Analyze and classify]
+    Analyze -->|Concept| Explain[Explain and simplify]
+    Analyze -->|Solve| Solve[SymPy solve and verify]
+    Analyze -->|Clarify| Clarify[Ask for details]
+    Explain --> Finalize[Finalize answer]
+    Solve --> Finalize
+    Clarify --> Finalize
+    Finalize --> Select[Select and validate visualization]
+    Select --> Response[Answer + typed UI spec]
+```
 
-- answer concept questions in English or Persian
-- guide users through step-by-step solution workflows
-- adapt explanation style to beginner, intermediate, or advanced learners
-- verify symbolic results with SymPy when possible
-- expose graph execution state in debug mode
+- `agent.py` owns the graph, tutoring behavior, SymPy solution verification, and post-answer visualization selection.
+- `visualizations.py` defines strict Pydantic schemas and an allowlisted expression validator. Generated output is data only; the frontend never executes model-produced code.
+- `api.py` adapts the graph to FastAPI and keeps bounded, in-memory history per conversation ID for follow-up context. History is process-local, not durable, and resets when the API restarts.
+- `frontend/` is a Vite, React, and TypeScript client. It renders backend visualization types with predefined components, Plotly, and JSXGraph.
+- `cli.py` remains the terminal interface.
+
+The graph keeps its existing concept, solve, and clarification routes. `select_visualization` runs after the finalized answer and returns a validated specification: `function_plot`, `derivative_plot`, `integral_plot`, `geometry`, `step_by_step`, `concept_card`, `parameter_explorer`, or `none`. Numeric arithmetic answers such as `What is 2 + 2?` do not receive an unnecessary chart.
+
+The web request is `{ "message": "Explain derivatives", "level": "beginner", "conversationId": "optional-id" }`. The response contains `answer`, `conversationId`, `visualizations`, `steps`, and `metadata`. Conversation memory is limited to recent turns within the supplied conversation ID.
+
+## Prerequisites
+
+- Python 3.9 or newer
+- Node.js 20 or newer and npm
 
 ## Installation
 
+From the repository root:
+
 ```bash
-cd mylo-math-tutor
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 ```
 
-## Environment setup
-
-Fill in your OpenAI-compatible credentials in `.env`:
-
-```env
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_BASE_URL=
-```
-
-The base URL is optional when using the default OpenAI endpoint.
-
-## Running the CLI
+Install web client dependencies:
 
 ```bash
+cd frontend
+npm install
+cd ..
+```
+
+## Environment
+
+Set optional OpenAI-compatible credentials in `.env` to enable LLM explanations. Without a key, the graph uses local fallback answers and still solves supported equations with SymPy.
+
+Offline mode includes direct SymPy arithmetic/equation solving, numerical root display with exact internal verification, and built-in explanations for common topics such as operations, fractions, primes, percentages, averages, slope, functions, probability, derivatives, and integrals. For arbitrary or less common conceptual questions, configure an OpenAI-compatible key; the local fallback intentionally does not claim to explain every possible topic.
+
+```env
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=
+FRONTEND_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
+`FRONTEND_ORIGINS` is a comma-separated CORS allowlist. The API key stays on the Python backend and is never sent to the browser.
+
+## Start the web application
+
+Run the API from the repository root:
+
+```bash
+source .venv/bin/activate
+uvicorn api:app --reload --host 127.0.0.1 --port 8000
+```
+
+In another terminal:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open the URL Vite prints, normally `http://localhost:5173`. Vite proxies `/api` to port 8000. API health is at `http://127.0.0.1:8000/api/health`.
+
+## Use the CLI
+
+The original terminal tutor remains available:
+
+```bash
+source .venv/bin/activate
 python cli.py
 ```
 
-## Available commands
+CLI commands: `/help`, `/level beginner|intermediate|advanced`, `/debug on`, `/debug off`, `/reset`, and `/exit`.
 
-- `/help` — show command help
-- `/level beginner` — set the tutoring level
-- `/level intermediate` — set the tutoring level
-- `/level advanced` — set the tutoring level
-- `/debug on` — enable trace output for graph state and routing
-- `/debug off` — disable trace output
-- `/reset` — clear the current session state
-- `/exit` — quit the tutor
+## Generative UI
 
-## Graph architecture
+The graph inspects the question, intent, explanation, solution steps, and verification state to select a visualization. Pydantic validates a closed union of supported types. Expression parsing allows only `x`, `a`, `b`, `c`, selected math functions, numeric literals, and arithmetic operators. Invalid or unsupported specs degrade to `none`.
 
-```mermaid
-flowchart TD
-    START --> AnalyzeQuestion --> DetectUserLevel --> ClassifyIntent
-    ClassifyIntent -->|CONCEPT| ExplainConcept --> SimplifyExplanation --> EvaluateClarity
-    EvaluateClarity -->|CLEAR| FinalizeAnswer
-    EvaluateClarity -->|NEEDS_SIMPLIFY| SimplifyExplanation
-    ClassifyIntent -->|SOLVE| IdentifyMathConcept --> CreateStrategy --> SolveStep --> VerifyResult
-    VerifyResult -->|CORRECT| ExplainSolution --> FinalizeAnswer
-    VerifyResult -->|INCORRECT| RetryStrategy --> CreateStrategy
-    ClassifyIntent -->|CLARIFY| AskForClarification --> FinalizeAnswer
-    FinalizeAnswer --> END
-```
+- Function and derivative plots support pan, zoom, hover values, and an adjustable tangent point.
+- Integral plots shade the selected interval.
+- Parameter explorers recalculate plots from sliders.
+- Geometry diagrams use JSXGraph; points can be dragged and circle radius can be adjusted.
+- Solved equations render expandable steps and verification status.
+- Concept cards render explanations and optional KaTeX formulas.
+- Persian assistant messages use RTL text layout while formulas keep normal math direction.
 
-## Node responsibilities
+## Tests and checks
 
-- `analyze_question`: detect missing information and language
-- `detect_user_level`: use the selected CLI level or estimate a level from the question
-- `classify_intent`: choose between concept, solve, or clarify
-- `explain_concept`: draft a helpful conceptual explanation
-- `simplify_explanation`: make the idea easier to understand
-- `evaluate_clarity`: judge whether the language matches the learner level
-- `identify_math_concept`: infer whether the task is algebra, calculus, geometry, probability, etc.
-- `create_strategy`: build a structured solution path
-- `solve_step`: execute one meaningful step at a time
-- `verify_result`: check the answer with SymPy when possible
-- `retry_strategy`: revise the approach if verification fails
-- `explain_solution`: explain the solution in simple, level-appropriate language
-- `ask_for_clarification`: request more details when the question is incomplete
-- `finalize_answer`: format the final response for the CLI
-
-## State schema
-
-The shared graph state includes:
-
-- `question`
-- `user_level`
-- `language`
-- `intent`
-- `math_concept`
-- `strategy`
-- `solution_steps`
-- `current_step`
-- `has_more_steps`
-- `calculation_result`
-- `verification_status`
-- `explanation`
-- `clarity_score`
-- `retry_count`
-- `max_retries`
-- `errors`
-- `final_answer`
-- `current_node`
-- `selected_branch`
-- `debug_trace`
-
-## Conditional branches
-
-- concept questions branch to the explanatory workflow
-- solving questions branch to the math strategy and verification workflow
-- incomplete questions route to clarification
-- clarity checks can loop back to simpler explanations until the retry limit is reached
-- failed verification can trigger a retry strategy before finalizing
-
-## Example questions
-
-```text
-What is a derivative?
-Solve 2x + 5 = 15
-انتگرال را خیلی ساده توضیح بده
-```
-
-## Testing
+Python agent, API, and visualization tests:
 
 ```bash
+source .venv/bin/activate
 pytest -q
 ```
 
-## Notes
+Frontend component and chat tests, lint, and production build:
 
-This tutor is intentionally terminal-only and never executes arbitrary code from the user prompt. Symbolic verification is carried out through `sympy` with guarded parsing logic, and all LLM calls are optional.
+```bash
+cd frontend
+npm run test
+npm run lint
+npm run build
+```
