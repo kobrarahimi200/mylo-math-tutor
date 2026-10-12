@@ -99,6 +99,31 @@ def test_bare_arithmetic_expression_is_evaluated():
     assert result["verification_status"] == "verified"
 
 
+@pytest.mark.parametrize(
+    "question",
+    ["343-4 =", "Please calculate: 343 minus 4 =", "What is 343 minus 4?"],
+)
+def test_arithmetic_is_extracted_from_question_wording(question):
+    result = agent.run_agent(question, user_level="beginner")
+    assert result["intent"] == "SOLVE"
+    assert result["calculation_result"] == "339"
+    assert result["verification_status"] == "verified"
+
+
+def test_arithmetic_is_found_inside_longer_question_wording():
+    result = agent.run_agent("what is the output if this 2304 -232 =", user_level="beginner")
+    assert result["intent"] == "SOLVE"
+    assert result["calculation_result"] == "2072"
+    assert result["verification_status"] == "verified"
+
+
+def test_modulo_is_extracted_from_question_wording():
+    result = agent.run_agent("give me the answer of 12312 % 2342 =", user_level="beginner")
+    assert result["intent"] == "SOLVE"
+    assert result["calculation_result"] == "602"
+    assert result["verification_status"] == "verified"
+
+
 def test_worded_arithmetic_is_evaluated():
     result = agent.run_agent("What is 3 times 4?", user_level="beginner")
     assert result["intent"] == "SOLVE"

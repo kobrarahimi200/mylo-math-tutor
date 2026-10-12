@@ -272,18 +272,31 @@ def parse_math_expression(expression: str) -> sp.Expr:
 
 def simple_arithmetic_expression(question: str) -> str | None:
     expression = str(question or "").strip().lower()
-    expression = re.sub(r"^(?:what is|calculate|compute|evaluate|solve)\s+", "", expression)
+    expression = re.sub(
+        r"^(?:(?:please|can you|could you|what is|what's|what does|calculate|compute|evaluate|work out|solve|resolve|find|tell me|is)\b[\s,:]*)+",
+        "",
+        expression,
+    )
     expression = expression.replace("×", "*").replace("÷", "/").replace("−", "-").replace("–", "-")
     replacements = (
         (r"\b(?:multiplied by|times|multiply)\b", "*"),
         (r"\b(?:divided by|divide by|over)\b", "/"),
         (r"\b(?:plus|added to)\b", "+"),
-        (r"\bminus\b", "-"),
+        (r"\b(?:minus|subtract)\b", "-"),
     )
     for pattern, operator in replacements:
         expression = re.sub(pattern, operator, expression)
-    expression = expression.strip(" ?.!;,:")
-    if not re.fullmatch(r"[\d\s.+*/^()\-]+", expression) or not re.search(r"[+*/^]|-(?=\s*\d)", expression):
+    if not re.fullmatch(r"[\d\s.+*/^()%\-=:]+", expression):
+        arithmetic_match = re.search(
+            r"(?<![\w.])\d+(?:\.\d+)?(?:\s*[+\-*/^%]\s*\d+(?:\.\d+)?)+(?![\w.])",
+            expression,
+        )
+        if not arithmetic_match:
+            return None
+        expression = arithmetic_match.group(0)
+    expression = re.sub(r"\bequals?\s*$", "", expression)
+    expression = expression.strip(" ?.!; ,:=")
+    if not re.fullmatch(r"[\d\s.+*/^()%\-]+", expression) or not re.search(r"[+*/^%]|-(?=\s*\d)", expression):
         return None
     try:
         parsed = parse_math_expression(expression)
