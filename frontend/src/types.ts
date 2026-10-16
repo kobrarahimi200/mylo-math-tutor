@@ -33,6 +33,8 @@ export type ChatResponse = {
   visualizations: VisualizationSpec[];
   steps: string[];
   metadata: {
+    llm?: { configuredProvider: string; provider: string; model: string; available: boolean; used: boolean; error: string };
+    explanationLevel?: Level;
     intent: string;
     language: string;
     verification: string;
@@ -48,3 +50,5 @@ export type Message = {
   visualization?: VisualizationSpec;
   metadata?: ChatResponse["metadata"];
 };
+export type ConversationSummary = { id: string; title: string; updatedAt: string; level: Level };
+export type SavedConversation = ConversationSummary & { messages: Message[] };

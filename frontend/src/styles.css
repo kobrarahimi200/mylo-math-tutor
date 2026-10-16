@@ -13,3 +13,49 @@
 @media(max-width:390px){.workspace-footer span:last-child{max-width:135px;text-align:right;line-height:1.4}.welcome-stage h1{font-size:32px}.composer-footer>span{font-size:8px}}
 @keyframes drawerIn{from{transform:translateX(-100%)}to{transform:translateX(0)}}
 .plot-placeholder{height:250px;display:grid;place-items:center;color:#829087;font-size:11px}
+.composer-actions{display:flex;align-items:center;gap:8px}.formula-toggle{display:flex;align-items:center;gap:5px;padding:6px 8px;border:0;border-radius:5px;background:transparent;color:var(--green);font-size:11px;font-weight:600;cursor:pointer}.formula-toggle:hover{background:var(--mint)}.formula-editor{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 10px;margin:0 0 10px;padding:10px;border:1px solid var(--line);border-radius:6px;background:#f8faf7}.formula-editor label{grid-column:1/-1;color:var(--muted);font-size:10px;font-weight:700}.formula-editor textarea{grid-column:1;grid-row:2;min-height:52px;padding:8px;border:1px solid var(--line);border-radius:5px;background:var(--white);color:var(--ink);font-family:monospace;font-size:12px;resize:vertical}.formula-editor>button{grid-column:2;grid-row:2;align-self:end;padding:8px 10px;border:0;border-radius:5px;background:var(--green);color:#fff;font-size:10px;font-weight:600;cursor:pointer}.formula-editor>button:disabled{cursor:not-allowed;opacity:.5}.dark-mode .formula-editor{background:#1b2821;border-color:#394a3e}.dark-mode .formula-editor textarea{background:#202e26;border-color:#394a3e;color:#d8e4da}
+.formula-editor{display:block;max-height:min(62vh,520px);overflow-y:auto}.formula-presets{display:grid;gap:12px}.formula-group h3{margin:0 0 6px;color:var(--muted);font-size:10px;font-weight:700}.formula-preset-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr));gap:6px}.formula-preset{min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:8px;border:1px solid var(--line);border-radius:5px;background:var(--white);color:var(--ink);text-align:left;cursor:pointer;transition:border-color .15s,background .15s}.formula-preset:hover{border-color:#9fc6ad;background:#f3f8f4}.formula-preset span{font-size:10px;font-weight:700}.formula-preset small{max-width:100%;overflow:hidden;color:var(--muted);font-family:monospace;font-size:9px;text-overflow:ellipsis;white-space:nowrap}.formula-manual{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}.formula-manual label{grid-column:1/-1;color:var(--muted);font-size:10px;font-weight:700}.formula-manual textarea{grid-column:1;grid-row:2;width:100%}.formula-manual>button{grid-column:2;grid-row:2;align-self:end}.dark-mode .formula-preset{background:#202e26;border-color:#394a3e;color:#d8e4da}.dark-mode .formula-preset:hover{background:#27392d;border-color:#587a60}
+.provider-status { color: var(--muted-foreground, #64748b); font-size: 0.8rem; margin: 0.25rem 0 0.75rem; }
+.provider-status p { margin: 0.25rem 0; }
+
+/* Readable mathematical answers and calm visual hierarchy. */
+.message-content { font-size: 14px; line-height: 1.85; }
+.message-content h2, .message-content h3 { color: var(--ink); font-family: Manrope, sans-serif; line-height: 1.4; margin: 1.6em 0 .7em; letter-spacing: -.025em; }
+.message-content h3 { font-size: 17px; }
+.message-content > :first-child { margin-top: 0; }
+.message-content ol { padding-inline-start: 1.65em; }
+.message-content li { padding-inline-start: .4em; margin: .8em 0; }
+.message-content li::marker { color: var(--green); font-weight: 700; }
+.message-content blockquote { margin: 24px 0 16px; padding: 18px 22px; border: 1px solid var(--line); border-inline-start: 3px solid var(--green); border-radius: 0 14px 14px 0; background: var(--mint); }
+.message-content blockquote > p:first-child { color: var(--green); font-size: 11px; letter-spacing: .09em; text-transform: uppercase; }
+.message-content blockquote .katex-display { border: 0; background: transparent; margin: 6px 0 0; padding: 4px 0; font-size: 1.15em; }
+.message-content table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 12px; }
+.message-content th, .message-content td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: start; }
+.message-content th { background: var(--mint); color: var(--green); }
+.message-content hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
+.example-link { display: flex; align-items: center; gap: 9px; }
+.example-symbol { flex: 0 0 24px; font: 600 16px Newsreader, serif; color: var(--green); text-align: center; }
+.triangle-diagram { margin: 16px 0; padding: 12px; background: var(--mint); border: 1px solid var(--line); border-radius: 12px; color: var(--green); }
+.triangle-diagram svg { display: block; width: 100%; max-height: 250px; }
+.triangle-diagram text { fill: currentColor; font: 600 14px Manrope, sans-serif; }
+.triangle-diagram .diagram-length { font-size: 18px; }
+.triangle-diagram figcaption { text-align: center; font-size: 11px; color: var(--muted); }
+
+.dark-mode .message-content strong { color: var(--ink); }
+.dark-mode .message-content .katex-display { background: var(--white); border-color: var(--line); }
+.dark-mode .message-content blockquote .katex-display { background: transparent; }
+
+.example-symbol { white-space: nowrap; flex-basis: 28px; }
+.message-content ol { list-style-type: decimal; }
+.geometry-board { width: 100%; height: 280px; min-height: 280px; position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; margin-top: 12px; }
+
+.level-description { font-size: 11px; line-height: 1.55; color: var(--muted); margin: 8px 3px 0; }
+.level-description span { display: block; font-size: 10px; margin-top: 3px; }
+.level-option-description { display: block; font-size: 10px; line-height: 1.4; color: var(--muted); text-transform: none; margin: 3px 0; }
+.select-option:has(.level-option-description) { height: auto; min-height: 54px; padding: 8px 10px; }
+.answer-level { display: inline-block; padding: 3px 9px; margin: 4px 0 8px; border: 1px solid var(--line); border-radius: 20px; background: var(--mint); color: var(--green); font-size: 10px; text-transform: capitalize; }
+
+.saved-chat-list { max-height: 190px; overflow-y: auto; }
+.saved-chat-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-empty { color: var(--muted); font-size: 11px; line-height: 1.6; padding: 0 9px; }
+.sidebar { overflow-y: auto; }

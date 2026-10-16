@@ -225,9 +225,18 @@ def choose_visualization(state: dict) -> dict:
     q = question.lower()
     intent = state.get("intent", "")
 
+    from calculus import calculus_request
+    calculus = calculus_request(question)
+
     arithmetic = re.sub(r"(?i)^\s*(?:what is|calculate|evaluate)\s+", "", question).rstrip("?!. ")
     if re.fullmatch(r"[\d\s.+\-*/^()]+", arithmetic):
         candidate = _none()
+    elif state.get("verification_status") == "verified" and calculus:
+        kind, expression = calculus
+        if kind == "integral":
+            candidate = {"type": "integral_plot", "title": "Integrand (shading over [0, 2] is illustrative)", "config": {"expression": expression, "bounds": (0, 2)}}
+        else:
+            candidate = {"type": "derivative_plot", "title": "Function and derivative", "config": {"expression": expression, "derivative_expression": _derivative(expression), "domain": (-10, 10)}}
     elif intent == "SOLVE":
         equation_plot = _polynomial_equation_plot(question)
         if equation_plot:
@@ -248,8 +257,8 @@ def choose_visualization(state: dict) -> dict:
             }
     elif any(term in q for term in ("circle", "radius", "دایره")):
         candidate = {"type": "geometry", "title": "Explore a circle", "config": {"shape": "circle", "radius": 2}}
-    elif any(term in q for term in ("triangle", "angle", "geometry", "مثلث", "زاویه")):
-        candidate = {"type": "geometry", "title": "Explore the geometry", "config": {"shape": "triangle"}}
+    elif "pythagorean" in q or any(term in q for term in ("triangle", "angle", "geometry", "مثلث", "زاویه")):
+        candidate = {"type": "geometry", "title": "A 3–4–5 right triangle" if "pythagorean" in q or "3–4–5" in q else "Explore the geometry", "config": {"shape": "triangle", "points": [(0, 0), (3, 0), (3, 4)] if "pythagorean" in q or "3–4–5" in q else []}}
     elif any(term in q for term in ("derivative", "differentiate", "مشتق")):
         expression = _expression_from_question(question)
         candidate = {

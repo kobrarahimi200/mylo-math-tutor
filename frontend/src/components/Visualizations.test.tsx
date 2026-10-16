@@ -59,6 +59,13 @@ describe("generative math components", () => {
     expect(screen.getByLabelText("Interactive circle diagram")).toBeInTheDocument();
   });
 
+  it("uses supplied triangle coordinates and labels the diagram", async () => {
+    render(<GeometryCanvas spec={{ type: "geometry", title: "3–4–5 triangle", config: { shape: "triangle", radius: 2, points: [[0, 0], [3, 0], [3, 4]] } }} />);
+    expect(screen.getByRole("img", { name: "Triangle diagram with labeled vertices and side lengths" })).toBeInTheDocument();
+    await waitFor(() => expect(board.create).toHaveBeenCalledWith("point", [3, 4], expect.any(Object)));
+    expect(screen.getByText("5")).toBeInTheDocument();
+  });
+
   it("marks Persian answers as right-to-left while keeping math rendering enabled", () => {
     render(<MessageBubble message={{ id: "fa", role: "assistant", content: "مشتق چیست؟ $f'(x)=2x$", language: "fa" }} />);
     expect(screen.getByText(/مشتق چیست/).closest(".message-content")).toHaveAttribute("dir", "rtl");

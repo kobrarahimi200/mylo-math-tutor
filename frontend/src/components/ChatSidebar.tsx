@@ -1,13 +1,20 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Select from "@radix-ui/react-select";
 import { BookOpen, Check, ChevronDown, Command, Menu, MessageSquarePlus, Settings2, Sparkles, X } from "lucide-react";
-import type { Level } from "../types";
+import { starterExamples } from "../lib/examples";
+import type { Level, ConversationSummary } from "../types";
 
-const examples = ["Explain derivatives using y = x²", "Solve 2x + 5 = 15", "Explore the area of a circle", "Show how a changes y = ax²"];
+
+
+const levelDescriptions: Record<Level, string> = {
+  beginner: "Every operation explained in plain language.",
+  intermediate: "Key steps, method, and a result check.",
+  advanced: "Formal reasoning, assumptions, and edge cases.",
+};
 
 export function ExplanationLevelSelector({ level, onChange }: { level: Level; onChange: (level: Level) => void }) {
   return (
-    <Select.Root value={level} onValueChange={(value) => onChange(value as Level)}>
+    <div className="level-control"><Select.Root value={level} onValueChange={(value) => onChange(value as Level)}>
       <Select.Trigger className="level-select" aria-label="Explanation level">
         <span>{level}</span><ChevronDown size={15} />
       </Select.Trigger>
@@ -16,20 +23,23 @@ export function ExplanationLevelSelector({ level, onChange }: { level: Level; on
           <Select.Viewport>
             {(["beginner", "intermediate", "advanced"] as Level[]).map((option) => (
               <Select.Item className="select-option" value={option} key={option}>
-                <Select.ItemText>{option}</Select.ItemText><Select.ItemIndicator><Check size={14} /></Select.ItemIndicator>
+                <span><Select.ItemText>{option}</Select.ItemText><small className="level-option-description">{levelDescriptions[option]}</small></span><Select.ItemIndicator><Check size={14} /></Select.ItemIndicator>
               </Select.Item>
             ))}
           </Select.Viewport>
         </Select.Content>
       </Select.Portal>
-    </Select.Root>
+    </Select.Root><p className="level-description">{levelDescriptions[level]}<span>Changing level updates your latest answer.</span></p></div>
   );
 }
 
-function SidebarContents({ level, onLevelChange, onNewChat, onExample, onSettings }: {
+type SidebarProps = {
   level: Level; onLevelChange: (level: Level) => void; onNewChat: () => void;
   onExample: (question: string) => void; onSettings: () => void;
-}) {
+  conversations?: ConversationSummary[]; activeConversationId?: string; onOpenConversation?: (id: string) => void;
+};
+
+function SidebarContents({ level, onLevelChange, onNewChat, onExample, onSettings, conversations = [], activeConversationId, onOpenConversation }: SidebarProps) {
   return (
     <>
       <a className="brand" href="#home" aria-label="Mylo home">
@@ -39,8 +49,11 @@ function SidebarContents({ level, onLevelChange, onNewChat, onExample, onSetting
       </a>
       <button className="new-chat-button" onClick={onNewChat}><MessageSquarePlus size={17} />New chat<span className="shortcut">⌘ K</span></button>
       <div className="sidebar-section">
-        <div className="section-label">WORKSPACE</div>
-        <button className="conversation-link active"><span className="conversation-dot" />Current conversation</button>
+        <div className="section-label">SAVED CHATS</div>
+        <div className="saved-chat-list">
+          {conversations.length === 0 && <p className="history-empty">Your conversations will be saved here.</p>}
+          {conversations.map((chat) => <button key={chat.id} className={`conversation-link ${chat.id === activeConversationId ? "active" : ""}`} aria-current={chat.id === activeConversationId ? "page" : undefined} title={chat.title} onClick={() => onOpenConversation?.(chat.id)}><span className="conversation-dot" /><span className="saved-chat-title">{chat.title}</span></button>)}
+        </div>
       </div>
       <div className="sidebar-section level-section">
         <div className="section-label">EXPLANATION LEVEL</div>
@@ -48,7 +61,7 @@ function SidebarContents({ level, onLevelChange, onNewChat, onExample, onSetting
       </div>
       <div className="sidebar-section examples-section">
         <div className="section-label"><BookOpen size={13} /> TRY AN EXAMPLE</div>
-        {examples.map((example) => <button key={example} className="example-link" onClick={() => onExample(example)}>{example}</button>)}
+        {starterExamples.map((example) => <button key={example.label} className="example-link" onClick={() => onExample(example.question)}><span className="example-symbol" aria-hidden="true">{example.symbol}</span>{example.sidebar}</button>)}
       </div>
       <div className="sidebar-bottom">
         <button className="settings-button" onClick={onSettings}><Settings2 size={17} />Settings</button>
@@ -58,17 +71,11 @@ function SidebarContents({ level, onLevelChange, onNewChat, onExample, onSetting
   );
 }
 
-export function ChatSidebar(props: {
-  level: Level; onLevelChange: (level: Level) => void; onNewChat: () => void;
-  onExample: (question: string) => void; onSettings: () => void;
-}) {
+export function ChatSidebar(props: SidebarProps) {
   return <aside className="sidebar"><SidebarContents {...props} /></aside>;
 }
 
-export function MobileSidebar(props: {
-  open: boolean; onOpenChange: (open: boolean) => void; level: Level; onLevelChange: (level: Level) => void;
-  onNewChat: () => void; onExample: (question: string) => void; onSettings: () => void;
-}) {
+export function MobileSidebar(props: SidebarProps & { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     <Dialog.Root open={props.open} onOpenChange={props.onOpenChange}>
       <Dialog.Trigger asChild><button className="icon-button mobile-menu" aria-label="Open menu"><Menu size={19} /></button></Dialog.Trigger>

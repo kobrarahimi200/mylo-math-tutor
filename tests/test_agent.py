@@ -253,6 +253,41 @@ def test_common_math_concepts_have_useful_offline_answers(monkeypatch, question,
     assert expected in result["final_answer"].lower()
 
 
+def test_quadratic_formula_preset_gets_relevant_offline_explanation(monkeypatch):
+    monkeypatch.setattr(agent, "get_llm", lambda: None)
+    question = r"Explain the quadratic formula: $$ x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a} $$"
+    result = agent.run_agent(question, user_level="beginner")
+
+    assert result["intent"] == "CONCEPT"
+    assert "solves ax² + bx + c = 0" in result["final_answer"]
+    assert "square root is a number" not in result["final_answer"]
+
+
+def test_equation_explanation_does_not_use_generic_solver_fallback(monkeypatch):
+    monkeypatch.setattr(agent, "get_llm", lambda: None)
+    result = agent.run_agent("Explain what an equation means.", user_level="beginner")
+
+    assert "two mathematical expressions are equal" in result["final_answer"]
+    assert "isolate the variable" not in result["final_answer"]
+
+
+def test_formula_followup_uses_conversation_context_when_llm_is_unavailable(monkeypatch):
+    monkeypatch.setattr(agent, "get_llm", lambda: None)
+    context = [{
+        "role": "user",
+        "content": r"Explain the quadratic formula: $$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$$",
+    }]
+
+    response = agent.safe_llm_response(
+        "Explain this mathematical idea.",
+        "What does the discriminant tell me?",
+        context=context,
+    )
+
+    assert "b² − 4ac" in response
+    assert "two distinct real roots" in response
+
+
 def test_derivative_of_expression_is_not_treated_as_equation(monkeypatch):
     monkeypatch.setattr(agent, "get_llm", lambda: None)
     result = agent.run_agent("Find the derivative of x^2", user_level="beginner")
@@ -271,3 +306,72 @@ def test_missing_api_key_and_llm_error_handling(monkeypatch):
 def test_solution_verification_for_exact_value(simple_state):
     result = agent.verify_result(simple_state)
     assert result["verification_status"] == "verified"
+
+
+@pytest.mark.parametrize("label", __import__("formula_examples").FORMULA_EXAMPLES)
+def test_every_preset_has_completed_offline_example(monkeypatch, label):
+    monkeypatch.setattr(agent, "get_llm", lambda: None)
+    result = agent.run_agent(f"Give me an example of the {label}: $$f(x) = x$$")
+    assert result["intent"] == "CONCEPT"
+    assert "Final result:" in result["final_answer"]
+    assert "1." in result["final_answer"]
+    assert "This version" not in result["final_answer"]
+
+
+def test_formula_example_followup_and_topic_switch(monkeypatch):
+    monkeypatch.setattr(agent, "get_llm", lambda: None)
+    context = [{"role": "user", "content": "Explain the quadratic formula"}]
+    example = agent.run_agent("Give me an example regarding this formula", conversation_context=context)
+    assert "x = 2 or 3" in example["final_answer"]
+    assert example["visualization_spec"]["config"]["expression"] == "x^2 - 5*x + 6"
+    switched = agent.run_agent("Explain the circle area", conversation_context=context)
+    assert "12.566" in switched["final_answer"]
+    assert "Discriminant" not in switched["final_answer"]
+
+
+def test_quadratic_solution_shows_calculations(monkeypatch):
+    monkeypatch.setattr(agent, "get_llm", lambda: None)
+    result = agent.run_agent("Solve x^2 - 7x + 12 = 0")
+    assert "= 1" in result["solution_steps"][1]
+    assert "3, 4" in result["final_answer"]
+    assert "left − right = 0" in result["final_answer"]
+    assert result["verification_status"] == "verified"
+
+
+def test_verification_requires_all_roots_and_rejects_extra_roots():
+    for candidate in ("2", "2, 3, 99"):
+        state = {"question": "x^2 - 5x + 6 = 0", "calculation_result": candidate}
+        assert agent.verify_result(state)["verification_status"] == "incorrect"
+
+
+def test_supported_preset_derivative_plot_matches_example(monkeypatch):
+    monkeypatch.setattr(agent, "get_llm", lambda: None)
+    result = agent.run_agent("Explain the chain rule")
+    assert result["visualization_spec"]["config"]["expression"] == "(3*x+1)^2"
+    assert "18*x" in result["visualization_spec"]["config"]["derivative_expression"]
+
+
+def test_llm_explanation_preserves_full_solution_and_requests_completion(monkeypatch):
+    from types import SimpleNamespace
+    prompts = []
+    completed = "Let u = x. Integrate by parts. Final result: (x − 1)e^x + C. Check by differentiation."
+
+    class Model:
+        def invoke(self, prompt):
+            prompts.append(str(prompt))
+            return SimpleNamespace(content=completed)
+
+    monkeypatch.setattr(agent, "get_llm", lambda: Model())
+    result = agent.run_agent(r"Explain this: $$\int x e^x dx$$", "beginner")
+    assert result["final_answer"] == "Answer:\n" + completed
+    assert "every meaningful calculation" in prompts[0]
+    assert "final result with units" in prompts[0]
+
+
+def test_triangle_side_label_is_not_subtraction(monkeypatch):
+    monkeypatch.setattr(agent, "get_llm", lambda: None)
+    result = agent.run_agent("Explain the Pythagorean theorem with a 3–4–5 right triangle and a diagram")
+    assert result["intent"] == "CONCEPT"
+    assert result["visualization_type"] == "geometry"
+    assert result["visualization_spec"]["config"]["points"] == [(0, 0), (3, 0), (3, 4)]
+    assert "c = 5 cm" in result["final_answer"]

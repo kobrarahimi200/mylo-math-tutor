@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+from uuid import uuid4
+import chat_history
 from typing import Any
 
 from agent import build_graph, create_initial_state, is_persian
@@ -20,6 +22,8 @@ Commands:
   /debug on
   /debug off
   /reset
+  /history
+  /load <conversation-id>
   /exit
 
 Ask your math question:
@@ -35,6 +39,8 @@ Commands:
   /debug on      Show graph execution trace
   /debug off     Hide graph execution trace
   /reset         Clear the current state and start a new session
+  /history       List saved conversations
+  /load <id>     Reopen a saved conversation
   /exit          Exit the tutor
         """.strip()
     )
@@ -48,6 +54,27 @@ def handle_command(command: str, session: dict[str, Any]) -> bool:
 
     if cmd == "/help":
         print_help()
+        return False
+
+    if cmd == "/history":
+        saved = chat_history.list_conversations(20)
+        for conversation in saved:
+            print(f"{conversation['id']}  {conversation['title']}")
+        if not saved:
+            print("No saved conversations yet.")
+        return False
+
+    if cmd.startswith("/load "):
+        conversation_id = cmd.split(maxsplit=1)[1].strip()
+        saved = chat_history.get_conversation(conversation_id)
+        if saved is None:
+            print("Conversation not found. Use /history to see saved chats.")
+            return False
+        session["conversation_id"] = conversation_id
+        session["conversation_context"] = chat_history.recent_context(conversation_id)
+        session["user_level"] = saved["level"]
+        for message in saved["messages"]:
+            print(f"\n{message['role'].capitalize()}:\n{message['content']}")
         return False
 
     if cmd == "/exit":
@@ -117,10 +144,25 @@ def run_session() -> None:
                 return
             continue
 
-        state = create_initial_state(user_input, session.get("user_level", "beginner"))
+        state = create_initial_state(user_input, session.get("user_level", "beginner"), session.get("conversation_context", []))
         graph = build_graph()
         result = graph.invoke(state)
         answer = result.get("final_answer") or "I could not produce an answer."
+        session["conversation_context"] = (session.get("conversation_context", []) + [
+            {"role": "user", "content": user_input}, {"role": "assistant", "content": answer},
+        ])[-12:]
+        conversation_id = session.setdefault("conversation_id", str(uuid4()))
+        spec = result.get("visualization_spec", {"type": "none"})
+        chat_history.save_exchange(conversation_id, user_input, {
+            "answer": answer,
+            "visualizations": [] if spec.get("type") == "none" else [spec],
+            "steps": result.get("solution_steps", []),
+            "metadata": {"conversationMemory": True, "language": result.get("language", "en"), "intent": result.get("intent", "CLARIFY"), "verification": result.get("verification_status", "unverified"), "explanationLevel": session.get("user_level", "beginner"), "llm": result.get("llm_status", {})},
+        }, session.get("user_level", "beginner"))
+        status = result.get("llm_status", {})
+        print(f"Provider: {status.get('provider', 'offline')} | Model: {status.get('model') or 'local math'}")
+        if status.get("error"):
+            print(status["error"])
 
         if session.get("debug"):
             debug_summary(result)

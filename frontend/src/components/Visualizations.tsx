@@ -86,6 +86,36 @@ export function IntegralPlot({ spec }: { spec: Extract<VisualizationSpec, { type
   return <PlotFrame title={spec.title}><div className="plot-legend"><span><i className="legend-dot green" />f(x) = {spec.config.expression}</span><span><i className="legend-dot wash" />shaded area</span></div><Plot data={[{ x, y, type: "scatter", mode: "lines", name: "f(x)", line: { color: "#16785c", width: 3 } }, { x: indices.map((index) => x[index]), y: indices.map((index) => y[index]), type: "scatter", mode: "lines", name: "Area", fill: "tozeroy", fillcolor: "rgba(36, 151, 111, .19)", line: { color: "rgba(36, 151, 111, .65)", width: 1 } }]} layout={{ autosize: true, height: 290, margin: { l: 42, r: 12, t: 10, b: 36 }, paper_bgcolor: "transparent", plot_bgcolor: "#fbfcfa", showlegend: false, xaxis: { gridcolor: "#e7ede8", zerolinecolor: "#aab8af" }, yaxis: { gridcolor: "#e7ede8", zerolinecolor: "#aab8af" }, hovermode: "closest", dragmode: "pan" }} config={{ responsive: true, displaylogo: false, scrollZoom: true }} useResizeHandler className="plotly-chart" /><p className="visual-caption">Shaded from x = {lower} to x = {upper}</p></PlotFrame>;
 }
 
+function TriangleDiagram({ points }: { points: [number, number][] }) {
+  const titleId = useId();
+  const vertices = points.length >= 3 ? points.slice(0, 3) : [[0, 0], [3, 0], [3, 4]];
+  const xs = vertices.map(([x]) => x), ys = vertices.map(([, y]) => y);
+  const width = Math.max(...xs) - Math.min(...xs), height = Math.max(...ys) - Math.min(...ys);
+  const scale = Math.min(240 / Math.max(width, 1), 150 / Math.max(height, 1));
+  const mapped = vertices.map(([x, y]) => [60 + (x - Math.min(...xs)) * scale, 190 - (y - Math.min(...ys)) * scale]);
+  return <figure className="triangle-diagram">
+    <svg viewBox="0 0 360 240" role="img" aria-labelledby={titleId}>
+      <title id={titleId}>Triangle diagram with labeled vertices and side lengths</title>
+      <polygon points={mapped.map((p) => p.join(",")).join(" ")} fill="currentColor" fillOpacity="0.08" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" />
+      {mapped.map(([x, y], i) => {
+        const [px, py] = mapped[(i + 1) % 3], [qx, qy] = mapped[(i + 2) % 3];
+        const u = [px - x, py - y], v = [qx - x, qy - y];
+        const ul = Math.hypot(...u), vl = Math.hypot(...v);
+        if (!ul || !vl || Math.abs(u[0] * v[0] + u[1] * v[1]) > ul * vl * 0.001) return null;
+        const ux = u[0] / ul * 12, uy = u[1] / ul * 12, vx = v[0] / vl * 12, vy = v[1] / vl * 12;
+        return <polyline key={`angle-${i}`} points={`${x + ux},${y + uy} ${x + ux + vx},${y + uy + vy} ${x + vx},${y + vy}`} fill="none" stroke="currentColor" strokeWidth="1.5" />;
+      })}
+      {mapped.map(([x, y], i) => <g key={i}><circle cx={x} cy={y} r="4" fill="currentColor" /><text x={x - 15} y={y - 10} className="diagram-vertex">{String.fromCharCode(65 + i)}</text></g>)}
+      {mapped.map(([x, y], i) => {
+        const next = (i + 1) % 3, [nx, ny] = mapped[next];
+        const length = Math.hypot(vertices[i][0] - vertices[next][0], vertices[i][1] - vertices[next][1]);
+        return <text key={i} x={(x + nx) / 2 + (Math.abs(x - nx) < 1 ? 18 : 0)} y={(y + ny) / 2 + (Math.abs(y - ny) < 1 ? 24 : -10)} textAnchor="middle" className="diagram-length">{Number(length.toFixed(2))}</text>;
+      })}
+    </svg>
+    <figcaption>Starting diagram · side lengths in the same units</figcaption>
+  </figure>;
+}
+
 export function GeometryCanvas({ spec }: { spec: Extract<VisualizationSpec, { type: "geometry" }> }) {
   const id = `geometry-${useId().replace(/:/g, "")}`;
   const [radius, setRadius] = useState(spec.config.radius || 2);
@@ -99,13 +129,14 @@ export function GeometryCanvas({ spec }: { spec: Extract<VisualizationSpec, { ty
         board.create("circle", [[0, 0], radius], { strokeColor: "#16785c", strokeWidth: 3, fillColor: "#a9d8c5", fillOpacity: 0.3, fixed: false });
         board.create("point", [0, 0], { name: "O", size: 3, color: "#e66b51", fixed: true });
       } else if (spec.config.shape === "triangle") {
-        const first = board.create("point", [[-3, -2]], { name: "A", size: 4, color: "#16785c" });
-        const second = board.create("point", [[3, -2]], { name: "B", size: 4, color: "#e66b51" });
-        const third = board.create("point", [[0, 3]], { name: "C", size: 4, color: "#b28a3d" });
+        const points = spec.config.points.length >= 3 ? spec.config.points : [[0, 0], [3, 0], [3, 4]];
+        const first = board.create("point", points[0], { name: "A", size: 4, color: "#16785c" });
+        const second = board.create("point", points[1], { name: "B", size: 4, color: "#e66b51" });
+        const third = board.create("point", points[2], { name: "C", size: 4, color: "#b28a3d" });
         board.create("polygon", [first, second, third], { borders: { strokeColor: "#16785c", strokeWidth: 2 }, fillColor: "#a9d8c5", fillOpacity: 0.24, vertices: { size: 4 } });
       } else {
         const points = spec.config.points.length ? spec.config.points : [[-2, 0], [0, 2], [2, 0]];
-        points.forEach((point, index) => board.create("point", [point], { name: String.fromCharCode(65 + index), size: 4, color: index === 1 ? "#e66b51" : "#16785c" }));
+        points.forEach((point, index) => board.create("point", point, { name: String.fromCharCode(65 + index), size: 4, color: index === 1 ? "#e66b51" : "#16785c" }));
         if (spec.config.shape === "angle") board.create("angle", [[-2, 0], [0, 0], [2, 0]], { radius: 0.7, fillColor: "#a9d8c5", fillOpacity: 0.45, strokeColor: "#16785c" });
       }
       disposeBoard = () => JXG.JSXGraph.freeBoard(board);
@@ -116,7 +147,7 @@ export function GeometryCanvas({ spec }: { spec: Extract<VisualizationSpec, { ty
     };
   }, [id, radius, spec.config.points, spec.config.shape]);
 
-  return <PlotFrame title={spec.title} eyebrow="DRAG TO EXPLORE"><div id={id} className="jxgbox geometry-board" role="img" aria-label={`Interactive ${spec.config.shape} diagram`} />{spec.config.shape === "circle" && <label className="point-slider"><span>Radius <b>r = {radius.toFixed(1)}</b></span><input type="range" min="0.5" max="4.5" step="0.1" value={radius} onChange={(event) => setRadius(Number(event.target.value))} /><span className="area-equation">Area = πr² = {(Math.PI * radius ** 2).toFixed(2)}</span></label>}</PlotFrame>;
+  return <PlotFrame title={spec.title} eyebrow="GEOMETRY LAB">{spec.config.shape === "triangle" && <TriangleDiagram points={spec.config.points} />}<p className="visual-caption">Drag the points below to explore the shape.</p><div id={id} className="jxgbox geometry-board" role="img" aria-label={`Interactive ${spec.config.shape} diagram`} />{spec.config.shape === "circle" && <label className="point-slider"><span>Radius <b>r = {radius.toFixed(1)}</b></span><input type="range" min="0.5" max="4.5" step="0.1" value={radius} onChange={(event) => setRadius(Number(event.target.value))} /><span className="area-equation">Area = πr² = {(Math.PI * radius ** 2).toFixed(2)}</span></label>}</PlotFrame>;
 }
 
 export function StepByStepSolution({ spec }: { spec: Extract<VisualizationSpec, { type: "step_by_step" }> }) {
