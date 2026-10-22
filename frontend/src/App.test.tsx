@@ -49,6 +49,16 @@ describe("chat workspace", () => {
     await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(question, "beginner", undefined));
   });
 
+  it.each(["$$x^{2}+1$$", "\\[x^{2}+1\\]", "\\(x^{2}+1\\)", "$x^{2}+1$"])("unwraps pasted formula %s before sending", async (formula) => {
+    sendMessage.mockResolvedValue(answer);
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Formula" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "LaTeX formula" }), { target: { value: formula } });
+    fireEvent.click(screen.getByRole("button", { name: "Insert formula" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send question" }));
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith("Explain the formula:\n\n$$\nx^{2}+1\n$$", "beginner", undefined));
+  });
+
   it("keeps the preset name when adding a formula to an existing request", () => {
     render(<App />);
     fireEvent.change(screen.getByRole("textbox", { name: "Your math question" }), { target: { value: "Give me an example of this" } });

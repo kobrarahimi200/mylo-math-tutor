@@ -17,7 +17,7 @@ from visualizations import VisualizationSpec
 class ChatRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    message: str = Field(min_length=1, max_length=4000)
+    message: str = Field(min_length=1, max_length=20000)
     level: Literal["beginner", "intermediate", "advanced"] = "intermediate"
     replace_latest: bool = Field(default=False, alias="replaceLatest")
     conversation_id: Optional[str] = Field(default=None, alias="conversationId", max_length=80)

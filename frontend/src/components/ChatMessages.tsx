@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkMath from "remark-math";
 import remarkGfm from "remark-gfm";
+import { normalizeMath } from "../lib/math";
 import type { Message } from "../types";
 import { VisualizationRenderer } from "./Visualizations";
 
@@ -20,7 +21,7 @@ export function MessageBubble({ message }: { message: Message }) {
           {message.metadata.llm.error && <p>{message.metadata.llm.error}</p>}
         </div>}
         <div className={`message-content ${message.language === "fa" ? "rtl-message" : ""}`} dir={message.language === "fa" ? "rtl" : "auto"}>
-          <ReactMarkdown remarkPlugins={[remarkMath, remarkGfm]} rehypePlugins={[rehypeKatex]}>{message.content.replace(/^Answer:\s*/i, "")}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkMath, remarkGfm]} rehypePlugins={[rehypeKatex]}>{normalizeMath(message.content.replace(/^Answer:\s*/i, ""))}</ReactMarkdown>
         </div>
         {!isUser && <VisualizationRenderer spec={message.visualization} />}
       </div>

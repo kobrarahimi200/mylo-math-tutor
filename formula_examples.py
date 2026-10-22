@@ -45,3 +45,31 @@ def resolve_formula(question: str, context: list[dict[str, str]]) -> str | None:
                 if label in turn.get("content", "").lower():
                     return label
     return None
+
+
+# Exact picker expressions; modified problems must go to the general tutor.
+PRESET_LATEX = {'quadratic formula': 'x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}',
+ 'binomial theorem': '(x+y)^n = \\sum_{k=0}^{n} \\binom{n}{k}x^{n-k}y^k',
+ 'difference of squares': 'a^2 - b^2 = (a-b)(a+b)',
+ 'arithmetic series': 'S_n = \\frac{n(a_1 + a_n)}{2}',
+ 'geometric series': 'S_n = a \\frac{1-r^n}{1-r}',
+ 'change of log base': '\\log_b(x) = \\frac{\\ln(x)}{\\ln(b)}',
+ "euler's identity": 'e^{i\\pi} + 1 = 0',
+ 'pythagorean theorem': 'a^2 + b^2 = c^2',
+ 'law of cosines': 'c^2 = a^2 + b^2 - 2ab\\cos(C)',
+ 'law of sines': '\\frac{a}{\\sin(A)} = \\frac{b}{\\sin(B)} = \\frac{c}{\\sin(C)}',
+ 'circle area': 'A = \\pi r^2',
+ 'sphere volume': 'V = \\frac{4}{3}\\pi r^3',
+ "heron's formula": 'A = \\sqrt{s(s-a)(s-b)(s-c)}',
+ 'chain rule': "\\frac{d}{dx}f(g(x)) = f'(g(x))g'(x)",
+ 'product rule': "\\frac{d}{dx}(uv) = u'v + uv'",
+ 'quotient rule': "\\frac{d}{dx}\\left(\\frac{u}{v}\\right) = \\frac{u'v-uv'}{v^2}",
+ 'integration by parts': '\\int u \\, dv = uv - \\int v \\, du',
+ 'fundamental theorem': "\\int_a^b f'(x)\\,dx = f(b)-f(a)",
+ 'taylor series': 'f(x) = \\sum_{n=0}^{\\infty} \\frac{f^{(n)}(a)}{n!}(x-a)^n',
+ "bayes' theorem": 'P(A \\mid B) = \\frac{P(B \\mid A)P(A)}{P(B)}',
+ 'normal distribution': 'f(x) = \\frac{1}{\\sigma\\sqrt{2\\pi}}e^{-\\frac{(x-\\mu)^2}{2\\sigma^2}}',
+ 'gaussian integral': '\\int_{-\\infty}^{\\infty} e^{-x^2}\\,dx = \\sqrt{\\pi}',
+ 'fourier transform': 'F(\\omega) = \\int_{-\\infty}^{\\infty} f(t)e^{-i\\omega t}\\,dt',
+ 'fourier series': 'f(x) = \\frac{a_0}{2} + \\sum_{n=1}^{\\infty}(a_n\\cos(nx)+b_n\\sin(nx))',
+ "stirling's approximation": 'n! \\approx \\sqrt{2\\pi n}\\left(\\frac{n}{e}\\right)^n'}

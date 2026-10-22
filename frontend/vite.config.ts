@@ -7,6 +7,9 @@ export default defineConfig({
     host: "0.0.0.0",
     proxy: { "/api": "http://127.0.0.1:8000" },
   },
+  preview: {
+    proxy: { "/api": "http://127.0.0.1:8000" },
+  },
   test: {
     environment: "jsdom",
     setupFiles: "./src/test-setup.ts",

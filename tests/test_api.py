@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -112,4 +113,71 @@ def test_custom_latex_solve_request_does_not_crash(monkeypatch):
         "message": r"Solve this equation: $$\frac{x+1}{x-1}=2$$",
     })
     assert response.status_code == 200
-    assert "offline" in response.json()["answer"]
+    assert "3" in response.json()["answer"]
+    assert response.json()["metadata"]["verification"] == "verified"
+
+
+# Read the actual picker payloads so additions to the UI enter this regression test.
+def _picker_formulas():
+    import json
+    import re
+    source = (ROOT / "frontend/src/App.tsx").read_text()
+    return [(label, json.loads(latex)) for label, latex in re.findall(
+        r'label: "([^"]+)", preview: "[^"]+", latex: ("(?:[^"\\]|\\.)*")', source,
+    )]
+
+
+@pytest.mark.parametrize("label,latex", _picker_formulas())
+def test_every_picker_formula_returns_complete_answer_without_inference(monkeypatch, label, latex):
+    def unexpected_model_call(*args, **kwargs):
+        raise AssertionError("Preset answers must not require model inference")
+    monkeypatch.setattr(agent, "safe_llm_response", unexpected_model_call)
+    response = TestClient(app).post("/api/chat", json={
+        "message": f"Explain the {label.lower()}:\n\n$$\n{latex}\n$$",
+        "level": "beginner",
+    })
+    assert response.status_code == 200
+    assert "Final result:" in response.json()["answer"]
+
+
+@pytest.mark.parametrize("formula,expected", [
+    (r"Solve $$\frac{x+1}{x-1}=2$$", "3"),
+    (r"Solve \(x^{2}-5x+6=0\)", "2, 3"),
+    (r"Solve \[\sqrt{x}=3\]", "9"),
+    (r"Solve $\frac{x}{\frac{1}{2}}=6$", "3"),
+    (r"\frac{d}{dx}x^{3}", "3"),
+    (r"\int x^{2}\,dx", "C"),
+])
+def test_common_formula_variations_are_solved_offline(formula, expected):
+    response = TestClient(app).post("/api/chat", json={"message": formula})
+    assert response.status_code == 200
+    assert expected in response.json()["answer"]
+    assert response.json()["metadata"]["verification"] == "verified"
+
+
+@pytest.mark.parametrize("formula", [
+    r"Explain the quadratic formula: $$x^2 - 9x + 20 = 0$$",
+    r"Evaluate $$\int_0^1\frac{\log(1-x)\log(x)}{x}\,dx$$",
+    r"Find the eigenvalues of $$\begin{pmatrix}1&2\\3&4\end{pmatrix}$$",
+    r"Prove $$\sum_{n=1}^{\infty}\frac{1}{n^2}=\frac{\pi^2}{6}$$",
+])
+def test_custom_complex_formulas_reach_general_tutor_intact(monkeypatch, formula):
+    from types import SimpleNamespace
+    prompts = []
+
+    class Model:
+        def invoke(self, prompt):
+            prompts.append("\n".join(message.content for message in prompt))
+            return SimpleNamespace(content="Complete custom worked solution.")
+
+    monkeypatch.setattr(agent, "get_llm", lambda: Model())
+    response = TestClient(app).post("/api/chat", json={"message": formula})
+    assert response.status_code == 200
+    assert "Complete custom worked solution" in response.json()["answer"]
+    assert formula in prompts[0]
+    assert response.json()["metadata"]["verification"] != "verified"
+
+
+def test_picker_and_builtin_formula_catalogs_match():
+    assert {label.lower(): latex for label, latex in _picker_formulas()} == agent.PRESET_LATEX
+    assert set(agent.PRESET_LATEX) == set(agent.FORMULA_EXAMPLES)

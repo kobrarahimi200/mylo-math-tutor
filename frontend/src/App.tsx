@@ -92,6 +92,15 @@ function ChatInput({ value, onChange, onSend, disabled }: { value: string; onCha
   };
   const appendFormula = (expression: string, label = "formula") => {
     if (disabled) return;
+    // Pasted TeX may already include display or inline delimiters.
+    expression = expression.trim();
+    for (const [open, close] of [["$$", "$$"], ["\\[", "\\]"], ["\\(", "\\)"], ["$", "$"]]) {
+      if (expression.startsWith(open) && expression.endsWith(close)) {
+        expression = expression.slice(open.length, -close.length).trim();
+        break;
+      }
+    }
+    if (!expression) return;
     const selection = selectionRef.current;
     const start = Math.min(selection?.start ?? value.length, value.length);
     const end = Math.min(selection?.end ?? value.length, value.length);

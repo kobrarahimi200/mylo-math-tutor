@@ -8,6 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage
 from llm_factory import get_llm, begin_llm_request, llm_status, record_llm_success, record_llm_failure, activate_runtime
 from calculus import calculus_request, compute_calculus, verify_calculus
+from math_input import normalize_math_question
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 import sympy as sp
@@ -17,7 +18,7 @@ from sympy.parsing.sympy_parser import (
     standard_transformations,
 )
 from visualizations import choose_visualization
-from formula_examples import FORMULA_EXAMPLES, resolve_formula
+from formula_examples import FORMULA_EXAMPLES, PRESET_LATEX, resolve_formula
 from learning_levels import level_guidance, explain_local_steps, explain_local_derivative, adapt_local_concept
 
 load_dotenv()
@@ -574,6 +575,9 @@ def classify_intent(state: dict[str, Any]) -> dict[str, Any]:
         state["intent"] = "SOLVE"
     elif any(token in ql for token in ["derivative", "integral", "limit", "matrix", "probability", "geometry", "algebra", "determinant", "eigenvalue", "series", "prove", "proof", "sum", "system", "vector", "complex", "trigonometry"]):
         state["intent"] = "CONCEPT"
+    elif len(question.split()) >= 3 or state.get("conversation_context"):
+        # Let the general tutor handle word problems and unfamiliar math topics.
+        state["intent"] = "CONCEPT"
     else:
         state["intent"] = "CLARIFY"
 
@@ -588,6 +592,19 @@ def explain_concept(state: dict[str, Any]) -> dict[str, Any]:
     state["selected_branch"] = "CONCEPT"
     question = state.get("question", "")
     level = state.get("user_level", "beginner")
+    # Picker presets have complete, checked worked examples. Serve these
+    # directly so selecting a formula does not depend on model availability.
+    formula = resolve_formula(question, [])
+    preset_match = re.fullmatch(
+        r"Explain the " + re.escape(formula or "") + r":\s*\$\$([\s\S]+)\$\$",
+        question, flags=re.IGNORECASE,
+    )
+    if formula and preset_match and preset_match.group(1).strip() == PRESET_LATEX.get(formula):
+        state["explanation"] = adapt_local_concept(
+            fallback_response("Explain this formula", question), question, level,
+        )
+        state["clarity_score"] = 90
+        return state
     request = calculus_request(question)
     if request:
         kind, expression = request
@@ -606,7 +623,9 @@ def explain_concept(state: dict[str, Any]) -> dict[str, Any]:
         return state
     explanation = safe_llm_response(
         level_guidance(level) + " Resolve references using the recent conversation. "
-        "Explain the formula, define each symbol and its conditions of use. "
+        "Solve the actual question completely, including advanced mathematics and word problems. "
+        "For a supplied problem, use its given values; do not replace it with an example. "
+        "For a conceptual question, define each symbol and its conditions of use. "
         "Give a concrete worked example with chosen values when none are supplied. "
         "Show substitution, every meaningful calculation, and the final result with units. "
         "Check the result. For a derivation or proof, justify each step and state assumptions. "
@@ -779,6 +798,8 @@ def _solve_step(state: dict[str, Any]) -> dict[str, Any]:
             ]
             state["current_step"] = 0
     elif not equation:
+        if get_llm() is not None:
+            raise ValueError("Use the general tutor for this notation")
         state["errors"] = state.get("errors", []) + ["No equation or arithmetic expression found in the prompt."]
         state["verification_status"] = "unverified"
         state["has_more_steps"] = False
@@ -1225,7 +1246,7 @@ def run_agent(
     user_level: str | None = None,
     conversation_context: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
-    state = create_initial_state(question, user_level, conversation_context)
+    state = create_initial_state(normalize_math_question(question), user_level, conversation_context)
     graph = build_graph()
     compiled = graph.invoke(state)
     return compiled

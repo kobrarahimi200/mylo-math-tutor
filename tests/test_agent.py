@@ -375,3 +375,25 @@ def test_triangle_side_label_is_not_subtraction(monkeypatch):
     assert result["visualization_type"] == "geometry"
     assert result["visualization_spec"]["config"]["points"] == [(0, 0), (3, 0), (3, 4)]
     assert "c = 5 cm" in result["final_answer"]
+
+
+@pytest.mark.parametrize("question", [
+    "A train travels 180 km in 2 hours. What is its speed?",
+    "How many ways can 8 people sit around a circular table?",
+    "Determine whether every finite integral domain is a field",
+])
+def test_general_math_questions_reach_model(monkeypatch, question):
+    from types import SimpleNamespace
+    prompts = []
+
+    class Model:
+        def invoke(self, prompt):
+            prompts.append(str(prompt))
+            return SimpleNamespace(content="Completed solution with assumptions and a checked result.")
+
+    monkeypatch.setattr(agent, "get_llm", lambda: Model())
+    result = agent.run_agent(question)
+    assert result["intent"] == "CONCEPT"
+    assert "Completed solution" in result["final_answer"]
+    assert question in prompts[0]
+    assert "do not replace it with an example" in prompts[0]
