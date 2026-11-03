@@ -211,7 +211,7 @@ describe("chat workspace", () => {
     render(<App />);
     fireEvent.change(screen.getByRole("textbox", { name: "Your math question" }), { target: { value: "2 + 2" } });
     fireEvent.click(screen.getByRole("button", { name: "Send question" }));
-    expect(await screen.findByText("Offline fallback")).toBeInTheDocument();
+    expect(await screen.findByText("Offline answer")).toBeInTheDocument();
     expect(screen.getByText("Run ollama pull qwen3:4b")).toBeInTheDocument();
   });
 

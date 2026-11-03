@@ -33,7 +33,7 @@ export type ChatResponse = {
   visualizations: VisualizationSpec[];
   steps: string[];
   metadata: {
-    llm?: { configuredProvider: string; provider: string; model: string; available: boolean; used: boolean; error: string };
+    llm?: { configuredProvider: string; provider: string; model: string; available: boolean; used: boolean; error: string; notice?: string; fallbackActive?: boolean; fallbackProvider?: string };
     explanationLevel?: Level;
     intent: string;
     language: string;
@@ -52,3 +52,7 @@ export type Message = {
 };
 export type ConversationSummary = { id: string; title: string; updatedAt: string; level: Level };
 export type SavedConversation = ConversationSummary & { messages: Message[] };
+
+export interface ProviderInfo { id: string; label: string; needsKey: boolean; configured: boolean; credentialSource: "keychain" | "environment" | "none"; model: string; defaultModel: string; paused: string }
+export interface ProviderOverview { active: { provider: string; model: string; available: boolean; error: string; notice?: string; fallbackActive?: boolean }; provider: string; fallback: string; providers: ProviderInfo[] }
+export interface ProviderTestResult { ok: boolean; message: string; kind?: string; model?: string }

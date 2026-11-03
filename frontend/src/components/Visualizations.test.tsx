@@ -6,7 +6,7 @@ import { FunctionPlot, GeometryCanvas, ParameterExplorer, StepByStepSolution } f
 
 const { board, initBoard, freeBoard } = vi.hoisted(() => {
   const mockBoard = { create: vi.fn(), update: vi.fn() };
-  return { board: mockBoard, initBoard: vi.fn(() => mockBoard), freeBoard: vi.fn() };
+  return { board: mockBoard, initBoard: vi.fn<(id: string, options: { boundingbox: number[] }) => typeof mockBoard>(() => mockBoard), freeBoard: vi.fn() };
 });
 
 vi.mock("react-plotly.js", () => ({ default: () => <div data-testid="plot" /> }));
@@ -64,6 +64,16 @@ describe("generative math components", () => {
     expect(screen.getByRole("img", { name: "Triangle diagram with labeled vertices and side lengths" })).toBeInTheDocument();
     await waitFor(() => expect(board.create).toHaveBeenCalledWith("point", [3, 4], expect.any(Object)));
     expect(screen.getByText("5")).toBeInTheDocument();
+  });
+
+  it("fits a large triangle in the interactive diagram", async () => {
+    render(<GeometryCanvas spec={{ type: "geometry", title: "5–12–13 triangle", config: { shape: "triangle", radius: 2, points: [[0, 0], [12, 0], [12, 5]] } }} />);
+    await waitFor(() => expect(initBoard).toHaveBeenCalled());
+    const bounds = initBoard.mock.calls[0][1].boundingbox;
+    expect(bounds[0]).toBeLessThan(0);
+    expect(bounds[1]).toBeGreaterThan(5);
+    expect(bounds[2]).toBeGreaterThan(12);
+    expect(bounds[3]).toBeLessThan(0);
   });
 
   it("marks Persian answers as right-to-left while keeping math rendering enabled", () => {

@@ -2,6 +2,7 @@ import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useLayoutEff
 import { ArrowUp, Check, Moon, PanelLeft, Sigma, Sun, X } from "lucide-react";
 import { ChatSidebar, ExplanationLevelSelector, MobileSidebar } from "./components/ChatSidebar";
 import { MessageList } from "./components/ChatMessages";
+import { ProviderSettings } from "./components/ProviderSettings";
 import { sendMessage, listConversations, getConversation } from "./lib/api";
 import { starterExamples } from "./lib/examples";
 import type { Level, Message, ConversationSummary } from "./types";
@@ -142,7 +143,7 @@ function ChatHeader({ dark, onThemeChange, onSettings, mobileProps }: { dark: bo
 
 function SettingsDialog({ open, onClose, level, onLevelChange }: { open: boolean; onClose: () => void; level: Level; onLevelChange: (level: Level) => void }) {
   if (!open) return null;
-  return <div className="settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div className="settings-title"><div><span className="visual-eyebrow">PREFERENCES</span><h2 id="settings-title">Learning settings</h2></div><button className="icon-button" onClick={onClose} aria-label="Close settings"><X size={17} /></button></div><label className="setting-row"><span><b>Explanation level</b><small>Adjust how Mylo walks through each idea</small></span><ExplanationLevelSelector level={level} onChange={onLevelChange} /></label><div className="setting-row"><span><b>Conversation memory</b><small>Recent turns stay available for follow-up questions</small></span><span className="setting-on"><Check size={13} /> On</span></div></section></div>;
+  return <div className="settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title"><div className="settings-title"><div><span className="visual-eyebrow">PREFERENCES</span><h2 id="settings-title">Learning settings</h2></div><button className="icon-button" onClick={onClose} aria-label="Close settings"><X size={17} /></button></div><label className="setting-row"><span><b>Explanation level</b><small>Adjust how Mylo walks through each idea</small></span><ExplanationLevelSelector level={level} onChange={onLevelChange} /></label><ProviderSettings /><div className="setting-row"><span><b>Conversation memory</b><small>Recent turns stay available for follow-up questions</small></span><span className="setting-on"><Check size={13} /> On</span></div></section></div>;
 }
 
 export default function App() {

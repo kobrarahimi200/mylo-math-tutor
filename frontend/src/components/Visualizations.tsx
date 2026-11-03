@@ -124,7 +124,13 @@ export function GeometryCanvas({ spec }: { spec: Extract<VisualizationSpec, { ty
     let disposeBoard: (() => void) | undefined;
     void import("jsxgraph").then(({ default: JXG }) => {
       if (cancelled) return;
-      const board = JXG.JSXGraph.initBoard(id, { boundingbox: [-5, 5, 5, -5], axis: true, showNavigation: true, showCopyright: false, pan: { enabled: true }, zoom: { wheel: true } });
+      let boundingbox: [number, number, number, number] = [-5, 5, 5, -5];
+      if (spec.config.points.length) {
+        const xs = spec.config.points.map(([x]) => x), ys = spec.config.points.map(([, y]) => y);
+        const padding = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1) * 0.2;
+        boundingbox = [Math.min(...xs) - padding, Math.max(...ys) + padding, Math.max(...xs) + padding, Math.min(...ys) - padding];
+      }
+      const board = JXG.JSXGraph.initBoard(id, { boundingbox, keepaspectratio: true, axis: true, showNavigation: true, showCopyright: false, pan: { enabled: true }, zoom: { wheel: true } });
       if (spec.config.shape === "circle") {
         board.create("circle", [[0, 0], radius], { strokeColor: "#16785c", strokeWidth: 3, fillColor: "#a9d8c5", fillOpacity: 0.3, fixed: false });
         board.create("point", [0, 0], { name: "O", size: 3, color: "#e66b51", fixed: true });

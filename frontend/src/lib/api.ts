@@ -1,4 +1,4 @@
-import type { ChatResponse, Level, ConversationSummary, SavedConversation } from "../types";
+import type { ChatResponse, Level, ConversationSummary, SavedConversation, ProviderOverview, ProviderTestResult } from "../types";
 
 async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
   try {
@@ -45,3 +45,20 @@ export async function getConversation(id: string): Promise<SavedConversation> {
   if (!response.ok) throw new Error("Could not open this saved chat. It may no longer be available.");
   return response.json() as Promise<SavedConversation>;
 }
+
+async function providerRequest<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+  const response = await apiFetch(path, { method, ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
+  if (!response.ok) {
+    const details = await response.json().catch(() => null);
+    throw new Error(typeof details?.detail === "string" ? details.detail : `The request failed (HTTP ${response.status}).`);
+  }
+  return response.json() as Promise<T>;
+}
+
+export const getProviders = () => providerRequest<ProviderOverview>("/api/providers");
+export const saveProviderSettings = (settings: { provider?: string; fallback?: string; models?: Record<string, string> }) => providerRequest<ProviderOverview>("/api/providers/settings", "PUT", settings);
+// The key is write-only: the backend stores it in the OS credential store and never returns it.
+export const saveProviderKey = (id: string, apiKey: string) => providerRequest<ProviderOverview>(`/api/providers/${encodeURIComponent(id)}/credential`, "PUT", { apiKey });
+export const removeProviderKey = (id: string) => providerRequest<ProviderOverview>(`/api/providers/${encodeURIComponent(id)}/credential`, "DELETE");
+export const listProviderModels = (id: string) => providerRequest<{ models: string[]; error?: string }>(`/api/providers/${encodeURIComponent(id)}/models`);
+export const testProvider = (id: string) => providerRequest<ProviderTestResult>(`/api/providers/${encodeURIComponent(id)}/test`, "POST");
